@@ -44,6 +44,9 @@ def delete_symbol(symbol):
     conn.close()
     return jsonify({"success": True})
 
+
+import sys
+
 @app.route("/webhook", methods=["POST"])
 def webhook():
     try:
@@ -54,6 +57,7 @@ def webhook():
             message = request.data.decode("utf-8")
 
         print("🚨 WEBHOOK СООБЩЕНИЕ:", message)
+        sys.stdout.flush()
 
         parts = message.strip().split()
         if len(parts) == 2 and parts[0].lower() in ["buy", "sell"]:
@@ -73,10 +77,13 @@ def webhook():
             c.execute("INSERT INTO signals (symbol, action, timestamp) VALUES (?, ?, ?)", (symbol, action, timestamp))
             conn.commit()
             conn.close()
+
             print(f"✅ Принят сигнал: {action} {symbol} @ {timestamp}")
+            sys.stdout.flush()
             return jsonify({"status": "success"}), 200
     except Exception as e:
         print("Webhook error:", e)
+        sys.stdout.flush()
     return jsonify({"status": "ignored"}), 400
 
 @app.route("/api/candles/<symbol>")
