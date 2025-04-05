@@ -53,6 +53,8 @@ def webhook():
         else:
             message = request.data.decode("utf-8")
 
+        print("🚨 WEBHOOK СООБЩЕНИЕ:", message)
+
         parts = message.strip().split()
         if len(parts) == 2 and parts[0].lower() in ["buy", "sell"]:
             action = parts[0].capitalize()
@@ -71,6 +73,7 @@ def webhook():
             c.execute("INSERT INTO signals (symbol, action, timestamp) VALUES (?, ?, ?)", (symbol, action, timestamp))
             conn.commit()
             conn.close()
+            print(f"✅ Принят сигнал: {action} {symbol} @ {timestamp}")
             return jsonify({"status": "success"}), 200
     except Exception as e:
         print("Webhook error:", e)
