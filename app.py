@@ -1,5 +1,4 @@
 
-# app.py
 from flask import Flask, render_template, request, jsonify
 import sqlite3
 import os
@@ -19,10 +18,6 @@ def get_symbols():
     with open(SYMBOLS_FILE, "r") as f:
         return json.load(f)
 
-def save_symbols(symbols):
-    with open(SYMBOLS_FILE, "w") as f:
-        json.dump(symbols, f)
-
 @app.route("/")
 def index():
     return render_template("index.html")
@@ -31,129 +26,40 @@ def index():
 def symbol(symbol):
     return render_template("symbol.html", symbol=symbol.upper())
 
-@app.route("/api/symbols", methods=["GET", "POST"])
-def api_symbols():
-    if request.method == "GET":
-        return jsonify(get_symbols())
-    elif request.method == "POST":
-        data = request.get_json()
-        symbol = data.get("symbol", "").upper()
-        if symbol:
-            symbols = get_symbols()
-            if symbol not in symbols:
-                symbols.append(symbol)
-                save_symbols(symbols)
-        return jsonify({"success": True})
+@app.route("/api/candles/<symbol>")
+def api_candles(symbol):
+    interval = request.args.get("interval", "1m")
+    if interval not in ["1m", "5m"]:
+        return jsonify([])
 
-@app.route("/api/symbols/<symbol>", methods=["DELETE"])
-def delete_symbol(symbol):
-    symbols = get_symbols()
-    if symbol.upper() in symbols:
-        symbols.remove(symbol.upper())
-        save_symbols(symbols)
-    return jsonify({"success": True})
-
-@app.route("/api/quotes/<symbol>")
-def get_quotes(symbol):
-    offset = int(request.args.get("offset", 0))
-    limit = 30
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute("""
-        SELECT timestamp, price,
-            (SELECT action FROM signals WHERE signals.symbol = prices.symbol AND signals.timestamp = prices.timestamp LIMIT 1)
-        FROM prices
-        WHERE symbol = ?
-        ORDER BY timestamp DESC
-        LIMIT ? OFFSET ?
-    """, (symbol.lower(), limit, offset))
+    c.execute("SELECT timestamp, price FROM prices WHERE symbol = ? ORDER BY timestamp ASC", (symbol.lower(),))
     rows = c.fetchall()
     conn.close()
-    quotes = []
-    for row in rows:
-        ts = datetime.fromisoformat(row[0]) + timedelta(hours=3)
-        quotes.append({
-            "time": ts.strftime("%Y-%m-%d %H:%M"),
-            "price": row[1],
-            "signal": row[2] or ""
+
+    candles = []
+    group = {}
+    for ts_str, price in rows:
+        ts = datetime.fromisoformat(ts_str)
+        minute = ts.minute - ts.minute % (5 if interval == "5m" else 1)
+        key = ts.replace(minute=minute, second=0, microsecond=0)
+
+        if key not in group:
+            group[key] = {"open": price, "high": price, "low": price, "close": price}
+        else:
+            group[key]["high"] = max(group[key]["high"], price)
+            group[key]["low"] = min(group[key]["low"], price)
+            group[key]["close"] = price
+
+    for k in sorted(group.keys()):
+        c = group[k]
+        candles.append({
+            "time": (k + timedelta(hours=3)).strftime("%Y-%m-%d %H:%M"),
+            "open": c["open"],
+            "high": c["high"],
+            "low": c["low"],
+            "close": c["close"]
         })
-    return jsonify(quotes)
 
-@app.route("/webhook", methods=["POST"])
-def webhook():
-    data = request.get_json()
-    message = data.get("message", "")
-    parts = message.strip().split()
-    if len(parts) == 2 and parts[0].lower() in ["buy", "sell"]:
-        action = parts[0].capitalize()
-        symbol = parts[1].upper()
-        timestamp = datetime.utcnow().replace(second=0, microsecond=0).isoformat()
-        conn = sqlite3.connect(DB_PATH)
-        c = conn.cursor()
-        c.execute("INSERT INTO signals (symbol, action, timestamp) VALUES (?, ?, ?)", (symbol, action, timestamp))
-        conn.commit()
-        conn.close()
-        return jsonify({"status": "success"}), 200
-    return jsonify({"status": "ignored"}), 400
-
-def init_db():
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS prices (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            symbol TEXT,
-            timestamp TEXT,
-            price REAL
-        )
-    """)
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS signals (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            symbol TEXT,
-            action TEXT,
-            timestamp TEXT
-        )
-    """)
-    conn.commit()
-    conn.close()
-
-def fetch_binance_data():
-    import websocket
-    import json
-
-    def on_message(ws, message):
-        data = json.loads(message)
-        if "data" in data:
-            item = data["data"]
-            symbol = item["s"]
-            price = float(item["p"])
-            ts = datetime.utcnow().replace(second=0, microsecond=0).isoformat()
-            conn = sqlite3.connect(DB_PATH)
-            c = conn.cursor()
-            c.execute("INSERT INTO prices (symbol, timestamp, price) VALUES (?, ?, ?)", (symbol.lower(), ts, price))
-            conn.commit()
-            conn.close()
-
-    def run_ws():
-        while True:
-            try:
-                symbols = get_symbols()
-                if not symbols:
-                    time.sleep(10)
-                    continue
-                streams = [s.lower() + "@trade" for s in symbols]
-                url = "wss://fstream.binance.com/stream?streams=" + "/".join(streams)
-                ws = websocket.WebSocketApp(url, on_message=on_message)
-                ws.run_forever()
-            except Exception as e:
-                print("WebSocket error:", e)
-                time.sleep(5)
-
-    threading.Thread(target=run_ws, daemon=True).start()
-
-if __name__ == "__main__":
-    init_db()
-    fetch_binance_data()
-    port = int(os.environ.get("PORT", 5000))
-    app.run(debug=False, host="0.0.0.0", port=port)
+    return jsonify(candles)

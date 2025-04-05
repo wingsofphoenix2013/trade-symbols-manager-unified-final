@@ -1,45 +1,44 @@
+
 <!DOCTYPE html>
 <html>
 <head>
-    <meta charset="UTF-8">
-    <title>{{ symbol }}</title>
+  <meta charset="UTF-8">
+  <title>{{ symbol }}</title>
 </head>
 <body>
-    <h1>Котировки: {{ symbol }}</h1>
-    <a href="/">← Назад</a>
-    <table border="1">
-        <thead>
-            <tr><th>Время (UTC+3)</th><th>Цена</th><th>Сигнал</th></tr>
-        </thead>
-        <tbody id="quotes"></tbody>
-    </table>
-    <button onclick="loadMore()">Load more</button>
+<h1>Котировки: {{ symbol }}</h1>
+<a href="/">← Назад</a>
+<p>
+  <button onclick="setIntervalType('1m')">M1</button>
+  <button onclick="setIntervalType('5m')">M5</button>
+</p>
+<table border="1">
+<thead><tr><th>Время</th><th>Open</th><th>High</th><th>Low</th><th>Close</th></tr></thead>
+<tbody id="candles"></tbody>
+</table>
 
-    <script>
-        let offset = 0;
-        let lastPrice = null;
-        async function loadMore() {
-            const res = await fetch(`/api/quotes/{{ symbol }}?offset=${offset}`);
-            const data = await res.json();
-            const tbody = document.getElementById("quotes");
-            data.forEach(row => {
-                const tr = document.createElement("tr");
-                const td1 = document.createElement("td");
-                td1.innerText = row.time;
-                const td2 = document.createElement("td");
-                td2.innerText = row.price;
-                td2.style.color = lastPrice === null ? "black" : (row.price > lastPrice ? "green" : row.price < lastPrice ? "red" : "black");
-                lastPrice = row.price;
-                const td3 = document.createElement("td");
-                td3.innerText = row.signal || "";
-                tr.appendChild(td1);
-                tr.appendChild(td2);
-                tr.appendChild(td3);
-                tbody.appendChild(tr);
-            });
-            offset += data.length;
-        }
-        loadMore();
-    </script>
+<script>
+let interval = "1m";
+function setIntervalType(i) {
+    interval = i;
+    loadCandles();
+}
+async function loadCandles() {
+    const res = await fetch(`/api/candles/{{ symbol }}?interval=${interval}`);
+    const data = await res.json();
+    const tbody = document.getElementById("candles");
+    tbody.innerHTML = "";
+    data.reverse().forEach(row => {
+        const tr = document.createElement("tr");
+        ["time", "open", "high", "low", "close"].forEach(key => {
+            const td = document.createElement("td");
+            td.innerText = row[key];
+            tr.appendChild(td);
+        });
+        tbody.appendChild(tr);
+    });
+}
+loadCandles();
+</script>
 </body>
 </html>
