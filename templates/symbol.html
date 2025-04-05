@@ -1,1 +1,39 @@
-<html><body><h1>Символ (обновлено)</h1></body></html>
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><title>{{ symbol }}</title></head>
+<body>
+<h1>Котировки: {{ symbol }}</h1>
+<a href="/">← Назад</a>
+<p>
+  <button onclick="setIntervalType('1m')">M1</button>
+  <button onclick="setIntervalType('5m')">M5</button>
+</p>
+<table border="1">
+<thead><tr><th>Время</th><th>Open</th><th>High</th><th>Low</th><th>Close</th></tr></thead>
+<tbody id="candles"></tbody>
+</table>
+<script>
+let interval = "1m";
+function setIntervalType(i) {
+    interval = i;
+    loadCandles();
+}
+async function loadCandles() {
+    const res = await fetch(`/api/candles/{{ symbol }}?interval=${interval}`);
+    const data = await res.json();
+    const tbody = document.getElementById("candles");
+    tbody.innerHTML = "";
+    data.reverse().forEach(row => {
+        const tr = document.createElement("tr");
+        ["time", "open", "high", "low", "close"].forEach(key => {
+            const td = document.createElement("td");
+            td.innerText = row[key];
+            tr.appendChild(td);
+        });
+        tbody.appendChild(tr);
+    });
+}
+loadCandles();
+</script>
+</body>
+</html>

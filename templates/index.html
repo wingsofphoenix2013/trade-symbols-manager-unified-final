@@ -1,1 +1,36 @@
-<html><body><h1>Главная (обновлено)</h1></body></html>
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><title>Торговые пары</title></head>
+<body>
+<h1>Управление торговыми парами</h1>
+<ul id="symbols"></ul>
+<input id="newSymbol" placeholder="Новая пара">
+<button onclick="addSymbol()">Добавить</button>
+<script>
+async function load() {
+    const res = await fetch("/api/symbols");
+    const symbols = await res.json();
+    const ul = document.getElementById("symbols");
+    ul.innerHTML = "";
+    symbols.forEach(sym => {
+        const li = document.createElement("li");
+        const link = document.createElement("a");
+        link.href = "/symbol/" + sym;
+        link.innerText = sym;
+        li.appendChild(link);
+        ul.appendChild(li);
+    });
+}
+async function addSymbol() {
+    const val = document.getElementById("newSymbol").value.toUpperCase();
+    await fetch("/api/symbols", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ symbol: val })
+    });
+    load();
+}
+load();
+</script>
+</body>
+</html>
