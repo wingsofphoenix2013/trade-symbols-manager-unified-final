@@ -121,6 +121,16 @@ def api_candles(symbol):
         })
     return jsonify(candles)
 
+@app.route("/api/clear/<symbol>", methods=["DELETE"])
+def clear_symbol_data(symbol):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("DELETE FROM symbols WHERE name = ?", (symbol.upper(),))
+    c.execute("DELETE FROM prices WHERE symbol = ?", (symbol.lower(),))
+    conn.commit()
+    conn.close()
+    return jsonify({"success": True})
+
 def init_db():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
