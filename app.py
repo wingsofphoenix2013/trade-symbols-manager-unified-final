@@ -46,29 +46,34 @@ def delete_symbol(symbol):
 
 @app.route("/webhook", methods=["POST"])
 def webhook():
-    if not request.is_json:
-    	return jsonify({"error": "Invalid content type"}), 415
-    data = request.get_json()
-    message = data.get("message", "")
-    parts = message.strip().split()
-    if len(parts) == 2 and parts[0].lower() in ["buy", "sell"]:
-        action = parts[0].capitalize()
-        symbol = parts[1].upper()
-        timestamp = datetime.utcnow().replace(second=0, microsecond=0).isoformat()
-        conn = sqlite3.connect(DB_PATH)
-        c = conn.cursor()
-        c.execute("""
-            CREATE TABLE IF NOT EXISTS signals (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                symbol TEXT,
-                action TEXT,
-                timestamp TEXT
-            )
-        """)
-        c.execute("INSERT INTO signals (symbol, action, timestamp) VALUES (?, ?, ?)", (symbol, action, timestamp))
-        conn.commit()
-        conn.close()
-        return jsonify({"status": "success"}), 200
+    try:
+        if request.is_json:
+            data = request.get_json()
+            message = data.get("message", "")
+        else:
+            message = request.data.decode("utf-8")
+
+        parts = message.strip().split()
+        if len(parts) == 2 and parts[0].lower() in ["buy", "sell"]:
+            action = parts[0].capitalize()
+            symbol = parts[1].upper()
+            timestamp = datetime.utcnow().replace(second=0, microsecond=0).isoformat()
+            conn = sqlite3.connect(DB_PATH)
+            c = conn.cursor()
+            c.execute("""
+                CREATE TABLE IF NOT EXISTS signals (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    symbol TEXT,
+                    action TEXT,
+                    timestamp TEXT
+                )
+            """)
+            c.execute("INSERT INTO signals (symbol, action, timestamp) VALUES (?, ?, ?)", (symbol, action, timestamp))
+            conn.commit()
+            conn.close()
+            return jsonify({"status": "success"}), 200
+    except Exception as e:
+        print("Webhook error:", e)
     return jsonify({"status": "ignored"}), 400
 
 @app.route("/api/candles/<symbol>")
