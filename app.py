@@ -96,6 +96,9 @@ def api_candles(symbol):
     c = conn.cursor()
     c.execute("SELECT timestamp, open, high, low, close FROM prices WHERE symbol = ? ORDER BY timestamp ASC", (symbol.lower(),))
     rows = c.fetchall()
+
+    c.execute("SELECT timestamp, action FROM signals WHERE symbol = ?", (symbol.upper(),))
+    signal_rows = {row[0]: row[1] for row in c.fetchall()}
     conn.close()
 
     group = {}
@@ -103,7 +106,7 @@ def api_candles(symbol):
         ts = datetime.fromisoformat(ts_str)
         minute = ts.minute - ts.minute % (5 if interval == "5m" else 1)
         key = ts.replace(minute=minute, second=0, microsecond=0)
-        group[key] = {"open": o, "high": h, "low": l, "close": c_}
+        group[key] = {"open": o, "high": h, "low": l, "close": c_, "signal": signal_rows.get(ts_str)}
 
     candles = []
     for k in sorted(group.keys()):
@@ -113,7 +116,8 @@ def api_candles(symbol):
             "open": c["open"],
             "high": c["high"],
             "low": c["low"],
-            "close": c["close"]
+            "close": c["close"],
+            "signal": c["signal"] or ""
         })
     return jsonify(candles)
 
