@@ -1,1 +1,45 @@
-<html><body><h1>Символ</h1></body></html>
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>{{ symbol }}</title>
+</head>
+<body>
+    <h1>Котировки: {{ symbol }}</h1>
+    <a href="/">← Назад</a>
+    <table border="1">
+        <thead>
+            <tr><th>Время (UTC+3)</th><th>Цена</th><th>Сигнал</th></tr>
+        </thead>
+        <tbody id="quotes"></tbody>
+    </table>
+    <button onclick="loadMore()">Load more</button>
+
+    <script>
+        let offset = 0;
+        let lastPrice = null;
+        async function loadMore() {
+            const res = await fetch(`/api/quotes/{{ symbol }}?offset=${offset}`);
+            const data = await res.json();
+            const tbody = document.getElementById("quotes");
+            data.forEach(row => {
+                const tr = document.createElement("tr");
+                const td1 = document.createElement("td");
+                td1.innerText = row.time;
+                const td2 = document.createElement("td");
+                td2.innerText = row.price;
+                td2.style.color = lastPrice === null ? "black" : (row.price > lastPrice ? "green" : row.price < lastPrice ? "red" : "black");
+                lastPrice = row.price;
+                const td3 = document.createElement("td");
+                td3.innerText = row.signal || "";
+                tr.appendChild(td1);
+                tr.appendChild(td2);
+                tr.appendChild(td3);
+                tbody.appendChild(tr);
+            });
+            offset += data.length;
+        }
+        loadMore();
+    </script>
+</body>
+</html>
