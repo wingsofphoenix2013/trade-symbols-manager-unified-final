@@ -12,18 +12,26 @@
 <thead><tr><th>Время</th><th>Open</th><th>High</th><th>Low</th><th>Close</th><th>Сигнал</th></tr></thead>
 <tbody id="candles"></tbody>
 </table>
+<button onclick="loadMore()">Загрузить ещё</button>
+
 <script>
 let interval = "1m";
+let offset = 0;
+const limit = 20;
+
 function setIntervalType(i) {
     interval = i;
-    loadCandles();
+    offset = 0;
+    document.getElementById("candles").innerHTML = "";
+    loadMore();
 }
-async function loadCandles() {
+
+async function loadMore() {
     const res = await fetch(`/api/candles/{{ symbol }}?interval=${interval}`);
     const data = await res.json();
     const tbody = document.getElementById("candles");
-    tbody.innerHTML = "";
-    data.reverse().forEach(row => {
+    const sliced = data.slice(-(offset + limit), -offset || undefined).reverse();
+    sliced.forEach(row => {
         const tr = document.createElement("tr");
         ["time", "open", "high", "low", "close", "signal"].forEach(key => {
             const td = document.createElement("td");
@@ -32,8 +40,9 @@ async function loadCandles() {
         });
         tbody.appendChild(tr);
     });
+    offset += limit;
 }
-loadCandles();
+loadMore();
 </script>
 </body>
 </html>
