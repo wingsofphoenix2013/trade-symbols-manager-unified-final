@@ -9,7 +9,7 @@
   <button onclick="setIntervalType('5m')">M5</button>
 </p>
 <table border="1">
-<thead><tr><th>Время</th><th>Open</th><th>High</th><th>Low</th><th>Close</th></tr></thead>
+<thead><tr><th>Время</th><th>Open</th><th>High</th><th>Low</th><th>Close</th><th>Сигнал</th></tr></thead>
 <tbody id="candles"></tbody>
 </table>
 <script>
@@ -25,9 +25,9 @@ async function loadCandles() {
     tbody.innerHTML = "";
     data.reverse().forEach(row => {
         const tr = document.createElement("tr");
-        ["time", "open", "high", "low", "close"].forEach(key => {
+        ["time", "open", "high", "low", "close", "signal"].forEach(key => {
             const td = document.createElement("td");
-            td.innerText = row[key];
+            td.innerText = row[key] || "";
             tr.appendChild(td);
         });
         tbody.appendChild(tr);
