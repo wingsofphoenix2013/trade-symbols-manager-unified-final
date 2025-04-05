@@ -46,6 +46,8 @@ def delete_symbol(symbol):
 
 @app.route("/webhook", methods=["POST"])
 def webhook():
+    if not request.is_json:
+    	return jsonify({"error": "Invalid content type"}), 415
     data = request.get_json()
     message = data.get("message", "")
     parts = message.strip().split()
