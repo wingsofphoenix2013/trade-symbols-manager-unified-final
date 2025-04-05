@@ -1,10 +1,7 @@
 
 <!DOCTYPE html>
 <html>
-<head>
-  <meta charset="UTF-8">
-  <title>{{ symbol }}</title>
-</head>
+<head><meta charset="UTF-8"><title>{{ symbol }}</title></head>
 <body>
 <h1>Котировки: {{ symbol }}</h1>
 <a href="/">← Назад</a>
@@ -16,7 +13,6 @@
 <thead><tr><th>Время</th><th>Open</th><th>High</th><th>Low</th><th>Close</th></tr></thead>
 <tbody id="candles"></tbody>
 </table>
-
 <script>
 let interval = "1m";
 function setIntervalType(i) {

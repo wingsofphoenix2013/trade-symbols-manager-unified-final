@@ -2,21 +2,12 @@
 from flask import Flask, render_template, request, jsonify
 import sqlite3
 import os
-import json
 import threading
 import time
 from datetime import datetime, timedelta
 
 app = Flask(__name__)
 DB_PATH = "/data/prices.db"
-SYMBOLS_FILE = "symbols.json"
-
-def get_symbols():
-    if not os.path.exists(SYMBOLS_FILE):
-        with open(SYMBOLS_FILE, "w") as f:
-            json.dump(["APTUSDT", "ATOMUSDT", "ENAUSDT"], f)
-    with open(SYMBOLS_FILE, "r") as f:
-        return json.load(f)
 
 @app.route("/")
 def index():
@@ -25,6 +16,32 @@ def index():
 @app.route("/symbol/<symbol>")
 def symbol(symbol):
     return render_template("symbol.html", symbol=symbol.upper())
+
+@app.route("/api/symbols", methods=["GET", "POST"])
+def symbols_api():
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    if request.method == "GET":
+        c.execute("SELECT name FROM symbols ORDER BY name")
+        data = [row[0].upper() for row in c.fetchall()]
+        conn.close()
+        return jsonify(data)
+    elif request.method == "POST":
+        symbol = request.json.get("symbol", "").upper()
+        if symbol:
+            c.execute("INSERT OR IGNORE INTO symbols (name) VALUES (?)", (symbol,))
+            conn.commit()
+        conn.close()
+        return jsonify({"success": True})
+
+@app.route("/api/symbols/<symbol>", methods=["DELETE"])
+def delete_symbol(symbol):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("DELETE FROM symbols WHERE name = ?", (symbol.upper(),))
+    conn.commit()
+    conn.close()
+    return jsonify({"success": True})
 
 @app.route("/api/candles/<symbol>")
 def api_candles(symbol):
@@ -64,6 +81,53 @@ def api_candles(symbol):
 
     return jsonify(candles)
 
+def init_db():
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("CREATE TABLE IF NOT EXISTS symbols (name TEXT PRIMARY KEY)")
+    c.execute("CREATE TABLE IF NOT EXISTS prices (id INTEGER PRIMARY KEY, symbol TEXT, timestamp TEXT, price REAL)")
+    conn.commit()
+    conn.close()
+
+def fetch_binance():
+    import websocket
+    import json
+
+    def on_message(ws, msg):
+        data = json.loads(msg)
+        if "data" in data:
+            symbol = data["data"]["s"]
+            price = float(data["data"]["p"])
+            ts = datetime.utcnow().replace(second=0, microsecond=0).isoformat()
+            conn = sqlite3.connect(DB_PATH)
+            c = conn.cursor()
+            c.execute("INSERT INTO prices (symbol, timestamp, price) VALUES (?, ?, ?)", (symbol.lower(), ts, price))
+            conn.commit()
+            conn.close()
+
+    def run():
+        while True:
+            try:
+                conn = sqlite3.connect(DB_PATH)
+                c = conn.cursor()
+                c.execute("SELECT name FROM symbols")
+                symbols = [row[0].lower() for row in c.fetchall()]
+                conn.close()
+                if not symbols:
+                    time.sleep(5)
+                    continue
+                streams = [f"{s}@trade" for s in symbols]
+                url = "wss://fstream.binance.com/stream?streams=" + "/".join(streams)
+                ws = websocket.WebSocketApp(url, on_message=on_message)
+                ws.run_forever()
+            except Exception as e:
+                print("WebSocket error:", e)
+                time.sleep(5)
+
+    threading.Thread(target=run, daemon=True).start()
+
 if __name__ == "__main__":
+    init_db()
+    fetch_binance()
     port = int(os.environ.get("PORT", 5000))
-    app.run(debug=False, host="0.0.0.0", port=port)
+    app.run(host="0.0.0.0", port=port)

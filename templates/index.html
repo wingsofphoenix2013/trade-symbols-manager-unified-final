@@ -19,6 +19,10 @@ async function load() {
         link.href = "/symbol/" + sym;
         link.innerText = sym;
         li.appendChild(link);
+        const btn = document.createElement("button");
+        btn.innerText = "Удалить";
+        btn.onclick = () => deleteSymbol(sym);
+        li.appendChild(btn);
         ul.appendChild(li);
     });
 }
@@ -29,6 +33,10 @@ async function addSymbol() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ symbol: val })
     });
+    load();
+}
+async function deleteSymbol(sym) {
+    await fetch("/api/symbols/" + sym, { method: "DELETE" });
     load();
 }
 load();
