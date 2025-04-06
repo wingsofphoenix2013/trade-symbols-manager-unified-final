@@ -10,16 +10,6 @@
       color: #333;
       margin: 40px;
     }
-    h1 {
-      text-align: center;
-      color: #2c3e50;
-    }
-    a {
-      display: inline-block;
-      margin-bottom: 20px;
-      color: #3498db;
-      text-decoration: none;
-    }
     table {
       border-collapse: collapse;
       width: 100%;
@@ -35,6 +25,8 @@
       background-color: #f9fafb;
       color: #555;
     }
+    .buyzone { background-color: #ccffcc; }
+    .sellzone { background-color: #ffcccc; }
     button {
       margin: 0 5px;
       padding: 8px 16px;
@@ -45,11 +37,12 @@
       cursor: pointer;
       font-weight: bold;
     }
-    button:hover {
-      background-color: #2980b9;
+    a {
+      display: inline-block;
+      margin-bottom: 20px;
+      color: #3498db;
+      text-decoration: none;
     }
-    .buyzone { background-color: #e0f7e0; }
-    .sellzone { background-color: #fde0e0; }
   </style>
 </head>
 <body>
@@ -60,7 +53,9 @@
   <button onclick="setIntervalType('5m')">M5</button>
 </p>
 <table>
-<thead><tr><th>Время</th><th>Open</th><th>High</th><th>Low</th><th>Close</th><th>Сигнал</th></tr></thead>
+<thead><tr>
+<th>Время</th><th>Open</th><th>High</th><th>Low</th><th>Close</th><th>Сигнал</th><th>Канал</th>
+</tr></thead>
 <tbody id="candles"></tbody>
 </table>
 <p style="text-align:center;"><button onclick="loadMore()">Загрузить ещё</button></p>
@@ -69,6 +64,7 @@
 let interval = "1m";
 let offset = 0;
 const limit = 20;
+let latestChannel = "";
 
 function setIntervalType(i) {
   interval = i;
@@ -77,7 +73,15 @@ function setIntervalType(i) {
   loadMore();
 }
 
+async function fetchChannel() {
+  const res = await fetch(`/api/linreg/{{ symbol }}`);
+  if (!res.ok) return "";
+  const data = await res.json();
+  latestChannel = `${data.lower} / ${data.center} / ${data.upper}`;
+}
+
 async function loadMore() {
+  await fetchChannel();
   const res = await fetch(`/api/candles/{{ symbol }}?interval=${interval}`);
   const data = await res.json();
   const tbody = document.getElementById("candles");
@@ -91,6 +95,8 @@ async function loadMore() {
     });
 
     const signalTd = document.createElement("td");
+    const channelTd = document.createElement("td");
+
     if (interval === "5m") {
       if (row.signal_type === "BUYZONE") signalTd.className = "buyzone";
       else if (row.signal_type === "SELLZONE") signalTd.className = "sellzone";
@@ -106,7 +112,14 @@ async function loadMore() {
         signalTd.innerText = row.signal + " (-)";
       }
     }
+
     tr.appendChild(signalTd);
+
+    // Отображение канала
+    const cText = interval === "5m" ? latestChannel : "";
+    channelTd.innerText = cText;
+    tr.appendChild(channelTd);
+
     tbody.appendChild(tr);
   });
   offset += limit;
