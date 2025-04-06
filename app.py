@@ -87,6 +87,7 @@ def webhook():
         sys.stdout.flush()
     return jsonify({"status": "ignored"}), 400
 
+from zoneinfo import ZoneInfo
 
 @app.route("/api/candles/<symbol>")
 def api_candles(symbol):
@@ -100,28 +101,40 @@ def api_candles(symbol):
     rows = c.fetchall()
 
     c.execute("SELECT timestamp, action FROM signals WHERE symbol = ?", (symbol.upper(),))
-    signal_rows = {row[0]: row[1] for row in c.fetchall()}
+    signal_rows = [(datetime.fromisoformat(row[0]), row[1]) for row in c.fetchall()]
     conn.close()
 
+    group_minutes = 5 if interval == "5m" else 1
     group = {}
+
     for ts_str, o, h, l, c_ in rows:
         ts = datetime.fromisoformat(ts_str)
-        minute = ts.minute - ts.minute % (5 if interval == "5m" else 1)
+        minute = ts.minute - ts.minute % group_minutes
         key = ts.replace(minute=minute, second=0, microsecond=0)
-        group[key] = {"open": o, "high": h, "low": l, "close": c_, "signal": signal_rows.get(ts_str)}
+
+        signal_in_window = [act for st, act in signal_rows if key <= st < key + timedelta(minutes=group_minutes)]
+        last_signal = signal_in_window[-1] if signal_in_window else None
+
+        group[key] = {
+            "open": o,
+            "high": h,
+            "low": l,
+            "close": c_,
+            "signal": last_signal
+        }
 
     candles = []
     for k in sorted(group.keys()):
+        local_time = k.replace(tzinfo=timezone.utc).astimezone(ZoneInfo("Europe/Kyiv"))
         c = group[k]
         candles.append({
-            "time": (k + timedelta(hours=3)).strftime("%Y-%m-%d %H:%M"),
+            "time": local_time.strftime("%Y-%m-%d %H:%M"),
             "open": c["open"],
             "high": c["high"],
             "low": c["low"],
             "close": c["close"],
             "signal": c["signal"] or ""
         })
-    return jsonify(candles)
 
 @app.route("/api/clear/<symbol>", methods=["DELETE"])
 def clear_symbol_data(symbol):
