@@ -95,20 +95,27 @@ def api_candles(symbol):
     if interval not in ["1m", "5m"]:
         return jsonify([])
 
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("SELECT timestamp, open, high, low, close FROM prices WHERE symbol = ? ORDER BY timestamp ASC", (symbol.lower(),))
-    rows = c.fetchall()
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute("SELECT timestamp, open, high, low, close FROM prices WHERE symbol = ? ORDER BY timestamp ASC", (symbol.lower(),))
+        rows = c.fetchall()
 
-    c.execute("SELECT timestamp, action FROM signals WHERE symbol = ?", (symbol.upper(),))
-    signal_rows = [(datetime.fromisoformat(row[0]), row[1]) for row in c.fetchall()]
-    conn.close()
+        c.execute("SELECT timestamp, action FROM signals WHERE symbol = ?", (symbol.upper(),))
+        signal_rows = [(datetime.fromisoformat(row[0]), row[1]) for row in c.fetchall()]
+        conn.close()
+    except Exception as e:
+        print("Ошибка чтения из БД:", e)
+        return jsonify([])
 
     group_minutes = 5 if interval == "5m" else 1
     group = {}
 
     for ts_str, o, h, l, c_ in rows:
-        ts = datetime.fromisoformat(ts_str)
+        try:
+            ts = datetime.fromisoformat(ts_str)
+        except Exception:
+            continue
         minute = ts.minute - ts.minute % group_minutes
         key = ts.replace(minute=minute, second=0, microsecond=0)
 
@@ -135,6 +142,8 @@ def api_candles(symbol):
             "close": c["close"],
             "signal": c["signal"] or ""
         })
+
+    return jsonify(candles or [])
 
 @app.route("/api/clear/<symbol>", methods=["DELETE"])
 def clear_symbol_data(symbol):
