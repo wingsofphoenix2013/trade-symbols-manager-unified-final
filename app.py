@@ -232,6 +232,7 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
 
+
 @app.route("/webhook", methods=["POST"])
 def webhook():
     try:
@@ -254,7 +255,14 @@ def webhook():
         raw_symbol = parts[1].upper()
         symbol = raw_symbol.replace(".P", "")
 
+        print("👉 ACTION:", action)
+        print("👉 SYMBOL:", symbol)
+        sys.stdout.flush()
+
         if action in ["BUY", "SELL", "BUYZONE", "SELLZONE", "BUYORDER", "SELLORDER"]:
+            print("✅ Тип действия распознан, пробуем записать...")
+            sys.stdout.flush()
+
             timestamp = datetime.utcnow().replace(second=0, microsecond=0).isoformat()
             conn = sqlite3.connect(DB_PATH)
             c = conn.cursor()
@@ -277,9 +285,11 @@ def webhook():
         else:
             print(f"⚠️ Неизвестный тип действия: {action}")
             sys.stdout.flush()
+
     except Exception as e:
         print("Webhook error:", e)
-        print("EXCEPTION TYPE:", type(e))
-        print("EXCEPTION DETAILS:", str(e))
         sys.stdout.flush()
-    return jsonify({"status": "ignored"}), 400
+
+    print("⚠️ Дошли до fallback — ничего не вернули явно.")
+    sys.stdout.flush()
+    return jsonify({"status": "fallback reached"}), 400
