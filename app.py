@@ -1,4 +1,3 @@
-
 from flask import Flask, render_template, request, jsonify
 import sqlite3
 import os
@@ -184,3 +183,44 @@ if __name__ == "__main__":
     fetch_kline_stream()
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
+
+
+@app.route("/webhook", methods=["POST"])
+def webhook():
+    try:
+        if request.is_json:
+            data = request.get_json()
+            message = data.get("message", "")
+        else:
+            message = request.data.decode("utf-8")
+
+        print("🚨 WEBHOOK СООБЩЕНИЕ:", message)
+        sys.stdout.flush()
+
+        parts = message.strip().split()
+        if len(parts) == 2:
+            action = parts[0].upper()
+            symbol = parts[1].upper()
+            if action in ["BUY", "SELL", "BUYZONE", "SELLZONE"]:
+                timestamp = datetime.utcnow().replace(second=0, microsecond=0).isoformat()
+                conn = sqlite3.connect(DB_PATH)
+                c = conn.cursor()
+                c.execute("""
+                    CREATE TABLE IF NOT EXISTS signals (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        symbol TEXT,
+                        action TEXT,
+                        timestamp TEXT
+                    )
+                """)
+                c.execute("INSERT INTO signals (symbol, action, timestamp) VALUES (?, ?, ?)", (symbol, action, timestamp))
+                conn.commit()
+                conn.close()
+
+                print(f"✅ Принят сигнал: {action} {symbol} @ {timestamp}")
+                sys.stdout.flush()
+                return jsonify({"status": "success"}), 200
+    except Exception as e:
+        print("Webhook error:", e)
+        sys.stdout.flush()
+    return jsonify({"status": "ignored"}), 400
