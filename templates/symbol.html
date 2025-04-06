@@ -64,7 +64,6 @@
 let interval = "1m";
 let offset = 0;
 const limit = 20;
-let latestChannel = "";
 
 function setIntervalType(i) {
   interval = i;
@@ -73,15 +72,7 @@ function setIntervalType(i) {
   loadMore();
 }
 
-async function fetchChannel() {
-  const res = await fetch(`/api/linreg/{{ symbol }}`);
-  if (!res.ok) return "";
-  const data = await res.json();
-  latestChannel = `${data.lower} / ${data.center} / ${data.upper}`;
-}
-
 async function loadMore() {
-  await fetchChannel();
   const res = await fetch(`/api/candles/{{ symbol }}?interval=${interval}`);
   const data = await res.json();
   const tbody = document.getElementById("candles");
@@ -111,15 +102,12 @@ async function loadMore() {
       } else if (["BUYORDER", "SELLORDER"].includes(row.signal)) {
         signalTd.innerText = row.signal + " (-)";
       }
+
+      channelTd.innerText = row.channel || "";
     }
 
     tr.appendChild(signalTd);
-
-    // Отображение канала
-    const cText = interval === "5m" ? latestChannel : "";
-    channelTd.innerText = cText;
     tr.appendChild(channelTd);
-
     tbody.appendChild(tr);
   });
   offset += limit;
