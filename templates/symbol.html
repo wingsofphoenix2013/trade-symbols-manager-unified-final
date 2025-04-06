@@ -47,11 +47,16 @@ async function loadMore() {
         });
 
         const signalTd = document.createElement("td");
-        signalTd.innerText = row.signal || "";
+
         if (interval === "5m") {
-            if (row.signal === "BUYZONE") signalTd.className = "buyzone";
-            if (row.signal === "SELLZONE") signalTd.className = "sellzone";
+            if (row.signal === "BUYZONE") {
+                signalTd.className = "buyzone";
+            }
+            if (row.signal === "SELLZONE") {
+                signalTd.className = "sellzone";
+            }
         }
+
         tr.appendChild(signalTd);
         tbody.appendChild(tr);
     });
