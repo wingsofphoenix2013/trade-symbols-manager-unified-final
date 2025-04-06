@@ -60,6 +60,12 @@
     .form button {
       background-color: #3498db;
     }
+    .settings-link {
+      display: block;
+      text-align: center;
+      margin-top: 40px;
+      font-size: 16px;
+    }
   </style>
 </head>
 <body>
@@ -69,6 +75,7 @@
   <input id="newSymbol" placeholder="Введите пару (например, BTCUSDT)">
   <button onclick="addSymbol()">Добавить</button>
 </div>
+<a class="settings-link" href="/channel-settings">⚙️ Настройки канала</a>
 <script>
 async function load() {
   const res = await fetch("/api/symbols");
