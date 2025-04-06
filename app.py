@@ -255,36 +255,37 @@ def init_db():
     conn.close()
 
 # === Подключение к Binance WebSocket ===
-def on_message(ws, msg):
-    try:
-        data = json.loads(msg)
-        k = data['data']['k']
-        if not k['x']:
-            return
-        symbol = data['data']['s'].lower()
-        close = k['c']
-        print(f"📦 Получено: {symbol} @ {close}")
-        sys.stdout.flush()
+def fetch_kline_stream():
+    def on_message(ws, msg):
+        try:
+            data = json.loads(msg)
+            k = data['data']['k']
+            if not k['x']:
+                return
+            symbol = data['data']['s'].lower()
+            close = k['c']
+            print(f"📦 Получено: {symbol} @ {close}")
+            sys.stdout.flush()
 
-        conn = sqlite3.connect(DB_PATH)
-        c = conn.cursor()
-        c.execute("CREATE TABLE IF NOT EXISTS prices (id INTEGER PRIMARY KEY AUTOINCREMENT, symbol TEXT, timestamp TEXT, open REAL, high REAL, low REAL, close REAL)")
-        c.execute("""
-            INSERT INTO prices (symbol, timestamp, open, high, low, close)
-            VALUES (?, ?, ?, ?, ?, ?)
-        """, (
-            symbol,
-            datetime.utcfromtimestamp(k['t'] // 1000).isoformat(),
-            float(k['o']), float(k['h']), float(k['l']), float(k['c'])
-        ))
-        conn.commit()
-        conn.close()
-        print(f"✅ Записано: {symbol} {k['t']} {k['c']}")
-        sys.stdout.flush()
+            conn = sqlite3.connect(DB_PATH)
+            c = conn.cursor()
+            c.execute("CREATE TABLE IF NOT EXISTS prices (id INTEGER PRIMARY KEY AUTOINCREMENT, symbol TEXT, timestamp TEXT, open REAL, high REAL, low REAL, close REAL)")
+            c.execute("""
+                INSERT INTO prices (symbol, timestamp, open, high, low, close)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (
+                symbol,
+                datetime.utcfromtimestamp(k['t'] // 1000).isoformat(),
+                float(k['o']), float(k['h']), float(k['l']), float(k['c'])
+            ))
+            conn.commit()
+            conn.close()
+            print(f"✅ Записано: {symbol} {k['t']} {k['c']}")
+            sys.stdout.flush()
 
-    except Exception as e:
-        print("❌ Ошибка записи свечи:", e)
-        sys.stdout.flush()
+        except Exception as e:
+            print("❌ Ошибка записи свечи:", e)
+            sys.stdout.flush()
 
     def run():
         while True:
