@@ -232,8 +232,6 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
 
-
-
 @app.route("/webhook", methods=["POST"])
 def webhook():
     try:
@@ -280,9 +278,8 @@ def webhook():
             print(f"⚠️ Неизвестный тип действия: {action}")
             sys.stdout.flush()
     except Exception as e:
+        import traceback
         print("Webhook error:", e)
+        traceback.print_exc()
         sys.stdout.flush()
-
-    print("⚠️ Сигнал не прошёл проверку: parts =", parts)
-    sys.stdout.flush()
     return jsonify({"status": "ignored"}), 400
