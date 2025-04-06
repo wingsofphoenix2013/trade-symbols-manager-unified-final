@@ -3,16 +3,16 @@ import sqlite3
 import os
 import json
 import sys
-from datetime import datetime, timedelta, timezone
-from zoneinfo import ZoneInfo
 import threading
 import time
 import websocket
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 app = Flask(__name__)
 DB_PATH = "/data/prices.db"
 
-# === CONFIG ===
+# === Загрузка конфигурации канала ===
 def load_channel_config():
     default = {"length": 50, "deviation": 2.0}
     try:
@@ -21,14 +21,17 @@ def load_channel_config():
     except:
         return default
 
+# === Главная страница ===
 @app.route("/")
 def index():
     return render_template("index.html")
 
+# === Страница символа ===
 @app.route("/symbol/<symbol>")
 def symbol(symbol):
     return render_template("symbol.html", symbol=symbol.upper())
 
+# === Настройки канала ===
 @app.route("/channel-settings", methods=["GET", "POST"])
 def channel_settings():
     if request.method == "POST":
@@ -41,10 +44,12 @@ def channel_settings():
         config = load_channel_config()
         return render_template("channel_settings.html", length=config["length"], deviation=config["deviation"])
 
+# === Заглушка для сигналов ===
 @app.route("/order-info")
 def order_info():
     return "<h2 style='text-align:center; font-family:sans-serif;'>ORDER INFO — заглушка</h2>"
 
+# === Список символов ===
 @app.route("/api/symbols", methods=["GET", "POST"])
 def api_symbols():
     conn = sqlite3.connect(DB_PATH)
@@ -65,6 +70,7 @@ def api_symbols():
         conn.close()
         return jsonify({"success": True})
 
+# === Удаление пары ===
 @app.route("/api/symbols/<symbol>", methods=["DELETE"])
 def delete_symbol(symbol):
     symbol = symbol.upper()
@@ -76,6 +82,7 @@ def delete_symbol(symbol):
     conn.close()
     return jsonify({"success": True})
 
+# === Очистка свечей по паре ===
 @app.route("/api/clear/<symbol>", methods=["DELETE"])
 def clear_prices(symbol):
     conn = sqlite3.connect(DB_PATH)
@@ -85,39 +92,7 @@ def clear_prices(symbol):
     conn.close()
     return jsonify({"success": True})
 
-@app.route("/api/linreg/<symbol>")
-def api_linreg(symbol):
-    config = load_channel_config()
-    length = config.get("length", 50)
-    deviation = config.get("deviation", 2.0)
-
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("SELECT timestamp, close FROM prices WHERE symbol = ? ORDER BY timestamp DESC LIMIT ?", (symbol.lower(), length))
-    rows = c.fetchall()
-    conn.close()
-
-    if len(rows) < length:
-        return jsonify({"error": "Недостаточно данных"}), 400
-
-    closes = [row[1] for row in reversed(rows)]
-    sumX = sum(i + 1 for i in range(length))
-    sumY = sum(closes)
-    sumXY = sum(closes[i] * (i + 1) for i in range(length))
-    sumX2 = sum((i + 1) ** 2 for i in range(length))
-
-    slope = (length * sumXY - sumX * sumY) / (length * sumX2 - sumX ** 2)
-    average = sumY / length
-    intercept = average - slope * sumX / length + slope
-    end = intercept
-    stdDev = sum((closes[i] - (intercept + slope * i)) ** 2 for i in range(length)) ** 0.5 / length
-
-    return jsonify({
-        "lower": round(end - deviation * stdDev, 5),
-        "center": round(end, 5),
-        "upper": round(end + deviation * stdDev, 5)
-    })
-
+# === Приём сигналов от TradingView ===
 @app.route("/webhook", methods=["POST"])
 def webhook():
     try:
@@ -144,12 +119,12 @@ def webhook():
         timestamp = datetime.utcnow().replace(second=0, microsecond=0).isoformat()
         conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
-        c.execute("""CREATE TABLE IF NOT EXISTS signals (
+        c.execute(\"\"\"CREATE TABLE IF NOT EXISTS signals (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             symbol TEXT,
             action TEXT,
             timestamp TEXT
-        )""")
+        )\"\"\")
         c.execute("INSERT INTO signals (symbol, action, timestamp) VALUES (?, ?, ?)", (symbol, action, timestamp))
         conn.commit()
         conn.close()
@@ -161,7 +136,110 @@ def webhook():
         sys.stdout.flush()
     return jsonify({"status": "ignored"}), 400
 
-# === BINANCE ===
+@app.route("/api/candles/<symbol>")
+def api_candles(symbol):
+    interval = request.args.get("interval", "1m")
+    if interval not in ["1m", "5m"]:
+        return jsonify([])
+
+    try:
+        config = load_channel_config()
+        length = config.get("length", 50)
+        deviation = config.get("deviation", 2.0)
+
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute("SELECT timestamp, open, high, low, close FROM prices WHERE symbol = ? ORDER BY timestamp ASC", (symbol.lower(),))
+        rows = c.fetchall()
+        c.execute("SELECT timestamp, action FROM signals WHERE symbol = ?", (symbol.upper(),))
+        signal_rows = [(datetime.fromisoformat(row[0]), row[1].upper()) for row in c.fetchall()]
+        conn.close()
+    except Exception as e:
+        print("Ошибка чтения из БД:", e)
+        return jsonify([])
+
+    group_minutes = 5 if interval == "5m" else 1
+    group = {}
+    prices_map = []
+
+    for ts_str, o, h, l, c_ in rows:
+        try:
+            ts = datetime.fromisoformat(ts_str)
+        except Exception:
+            continue
+        prices_map.append((ts, o, h, l, c_))
+
+    for i in range(len(prices_map)):
+        ts, o, h, l, c_ = prices_map[i]
+        minute = ts.minute - ts.minute % group_minutes
+        key = ts.replace(minute=minute, second=0, microsecond=0)
+
+        orders = []
+        zones = []
+        for st, act in signal_rows:
+            if key <= st < key + timedelta(minutes=group_minutes):
+                if "ORDER" in act:
+                    orders.append((st, act))
+                elif "ZONE" in act:
+                    zones.append((st, act))
+
+        signal_text = ""
+        signal_type = ""
+
+        if interval == "5m":
+            if orders and (not zones or orders[0][0] < zones[0][0]):
+                signal_text = orders[0][1] + " (-)"
+            elif zones and (not orders or zones[0][0] < orders[0][0]):
+                signal_text = orders[0][1] if orders else ""
+                signal_type = zones[-1][1]
+            elif zones and orders:
+                signal_text = orders[0][1] + " (-)"
+                signal_type = zones[-1][1]
+
+        # Расчёт канала
+        window = prices_map[max(0, i - length + 1): i + 1]
+        if len(window) == length:
+            closes = [w[4] for w in window]
+            sumX = sum(j + 1 for j in range(length))
+            sumY = sum(closes)
+            sumXY = sum(closes[j] * (j + 1) for j in range(length))
+            sumX2 = sum((j + 1) ** 2 for j in range(length))
+            slope = (length * sumXY - sumX * sumY) / (length * sumX2 - sumX ** 2)
+            average = sumY / length
+            intercept = average - slope * sumX / length + slope
+            end = intercept
+            stdDev = sum((closes[j] - (intercept + slope * j)) ** 2 for j in range(length)) ** 0.5 / length
+            lower = round(end - deviation * stdDev, 5)
+            center = round(end, 5)
+            upper = round(end + deviation * stdDev, 5)
+        else:
+            lower = center = upper = ""
+
+        group.setdefault(key, {
+            "open": o, "high": h, "low": l, "close": c_,
+            "signal_text": signal_text,
+            "signal_type": signal_type,
+            "lower": lower, "center": center, "upper": upper
+        })
+
+    candles = []
+    for k in sorted(group.keys()):
+        local_time = k.replace(tzinfo=timezone.utc).astimezone(ZoneInfo("Europe/Kyiv"))
+        c = group[k]
+        candles.append({
+            "time": local_time.strftime("%Y-%m-%d %H:%M"),
+            "open": c["open"],
+            "high": c["high"],
+            "low": c["low"],
+            "close": c["close"],
+            "signal": c["signal_text"],
+            "signal_type": c["signal_type"],
+            "channel": f"{c['lower']} / {c['center']} / {c['upper']}" if c["lower"] != "" else ""
+        })
+
+    return jsonify(candles or [])
+
+# === Инициализация базы данных ===
 def init_db():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
@@ -171,13 +249,13 @@ def init_db():
     conn.commit()
     conn.close()
 
+# === Подключение к Binance WebSocket ===
 def fetch_kline_stream():
     def on_message(ws, msg):
         try:
             data = json.loads(msg)
             k = data['data']['k']
-            if not k['x']:
-                return
+            if not k['x']: return
             conn = sqlite3.connect(DB_PATH)
             c = conn.cursor()
             c.execute("INSERT INTO prices (symbol, timestamp, open, high, low, close) VALUES (?, ?, ?, ?, ?, ?)",
@@ -210,6 +288,7 @@ def fetch_kline_stream():
 
     threading.Thread(target=run, daemon=True).start()
 
+# === Запуск приложения ===
 if __name__ == "__main__":
     init_db()
     fetch_kline_stream()
