@@ -1,4 +1,3 @@
-
 from flask import Flask, render_template, request, jsonify, redirect
 import sqlite3
 import os
@@ -6,10 +5,15 @@ import json
 import sys
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
+import threading
+import time
+import websocket
+import traceback
 
 app = Flask(__name__)
 DB_PATH = "/data/prices.db"
 
+# === CONFIG ===
 def load_channel_config():
     default = {"length": 50, "deviation": 2.0}
     try:
@@ -22,6 +26,10 @@ def load_channel_config():
 def index():
     return render_template("index.html")
 
+@app.route("/symbol/<symbol>")
+def symbol(symbol):
+    return render_template("symbol.html", symbol=symbol.upper())
+
 @app.route("/channel-settings", methods=["GET", "POST"])
 def channel_settings():
     if request.method == "POST":
@@ -33,6 +41,10 @@ def channel_settings():
     else:
         config = load_channel_config()
         return render_template("channel_settings.html", length=config["length"], deviation=config["deviation"])
+
+@app.route("/order-info")
+def order_info():
+    return "<h2 style='text-align:center; font-family:sans-serif;'>ORDER INFO — заглушка</h2>"
 
 @app.route("/api/symbols", methods=["GET", "POST"])
 def api_symbols():
@@ -107,6 +119,52 @@ def api_linreg(symbol):
         "upper": round(end + deviation * stdDev, 5)
     })
 
+@app.route("/webhook", methods=["POST"])
+def webhook():
+    try:
+        if request.is_json:
+            data = request.get_json()
+            message = data.get("message", "")
+        else:
+            message = request.data.decode("utf-8")
+
+        print("🚨 WEBHOOK СООБЩЕНИЕ:", message)
+        sys.stdout.flush()
+
+        parts = message.strip().split()
+        if not parts or len(parts) < 2:
+            return jsonify({"status": "invalid format"}), 400
+
+        action = parts[0].upper()
+        raw_symbol = parts[1].upper()
+        symbol = raw_symbol.replace(".P", "")
+
+        if action not in ["BUY", "SELL", "BUYZONE", "SELLZONE", "BUYORDER", "SELLORDER"]:
+            return jsonify({"status": "unknown action"}), 400
+
+        timestamp = datetime.utcnow().replace(second=0, microsecond=0).isoformat()
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS signals (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                symbol TEXT,
+                action TEXT,
+                timestamp TEXT
+            )
+        """)
+        c.execute("INSERT INTO signals (symbol, action, timestamp) VALUES (?, ?, ?)", (symbol, action, timestamp))
+        conn.commit()
+        conn.close()
+
+        return jsonify({"status": "success"}), 200
+
+    except Exception as e:
+        print("Webhook error:", e)
+        traceback.print_exc()
+        sys.stdout.flush()
+    return jsonify({"status": "ignored"}), 400
+
 @app.route("/api/candles/<symbol>")
 def api_candles(symbol):
     interval = request.args.get("interval", "1m")
@@ -151,7 +209,6 @@ def api_candles(symbol):
         if interval == "5m":
             if orders and (not zones or orders[0][0] < zones[0][0]):
                 signal_text = orders[0][1] + " (-)"
-                signal_type = ""
             elif zones and (not orders or zones[0][0] < orders[0][0]):
                 signal_text = orders[0][1] if orders else ""
                 signal_type = zones[-1][1]
@@ -184,56 +241,86 @@ def api_candles(symbol):
 
     return jsonify(candles or [])
 
-@app.route("/webhook", methods=["POST"])
-def webhook():
-    try:
-        if request.is_json:
-            data = request.get_json()
-            message = data.get("message", "")
-        else:
-            message = request.data.decode("utf-8")
-
-        print("🚨 WEBHOOK СООБЩЕНИЕ:", message)
-        sys.stdout.flush()
-
-        parts = message.strip().split()
-        if not parts or len(parts) < 2:
-            print("⚠️ Неверный формат webhook:", message)
-            sys.stdout.flush()
-            return jsonify({"status": "invalid format"}), 400
-
-        action = parts[0].upper()
-        raw_symbol = parts[1].upper()
-        symbol = raw_symbol.replace(".P", "")
-
-        if action in ["BUY", "SELL", "BUYZONE", "SELLZONE", "BUYORDER", "SELLORDER"]:
-            timestamp = datetime.utcnow().replace(second=0, microsecond=0).isoformat()
+# === BINANCE STREAM ===
+def fetch_kline_stream():
+    def on_message(ws, msg):
+        try:
+            data = json.loads(msg)
+            k = data['data']['k']
+            if not k['x']:
+                return
             conn = sqlite3.connect(DB_PATH)
             c = conn.cursor()
             c.execute("""
-                CREATE TABLE IF NOT EXISTS signals (
+                CREATE TABLE IF NOT EXISTS prices (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     symbol TEXT,
-                    action TEXT,
-                    timestamp TEXT
+                    timestamp TEXT,
+                    open REAL,
+                    high REAL,
+                    low REAL,
+                    close REAL
                 )
             """)
-            c.execute("INSERT INTO signals (symbol, action, timestamp) VALUES (?, ?, ?)",
-                      (symbol, action, timestamp))
+            c.execute("INSERT INTO prices (symbol, timestamp, open, high, low, close) VALUES (?, ?, ?, ?, ?, ?)",
+                      (data['data']['s'].lower(), datetime.utcfromtimestamp(k['t'] // 1000).isoformat(),
+                       float(k['o']), float(k['h']), float(k['l']), float(k['c'])))
             conn.commit()
             conn.close()
-
-            print(f"✅ Принят сигнал: {action} {symbol} @ {timestamp}")
+        except Exception as e:
+            print("Ошибка записи свечи:", e)
             sys.stdout.flush()
-            return jsonify({"status": "success"}), 200
-    except Exception as e:
-        print("Webhook error:", e)
-        sys.stdout.flush()
 
-    print("⚠️ fallback reached")
-    sys.stdout.flush()
-    return jsonify({"status": "ignored"}), 400
+    def run():
+        while True:
+            try:
+                conn = sqlite3.connect(DB_PATH)
+                c = conn.cursor()
+                c.execute("SELECT name FROM symbols")
+                symbols = [row[0].lower() for row in c.fetchall()]
+                conn.close()
+                if not symbols:
+                    time.sleep(5)
+                    continue
+                streams = [f"{s}@kline_1m" for s in symbols]
+                url = "wss://fstream.binance.com/stream?streams=" + "/".join(streams)
+                ws = websocket.WebSocketApp(url, on_message=on_message)
+                ws.run_forever()
+            except Exception as e:
+                print("Ошибка WebSocket:", e)
+                time.sleep(5)
+
+    threading.Thread(target=run, daemon=True).start()
+
+# === INIT DB ===
+def init_db():
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("CREATE TABLE IF NOT EXISTS symbols (name TEXT PRIMARY KEY)")
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS signals (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            symbol TEXT,
+            action TEXT,
+            timestamp TEXT
+        )
+    """)
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS prices (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            symbol TEXT,
+            timestamp TEXT,
+            open REAL,
+            high REAL,
+            low REAL,
+            close REAL
+        )
+    """)
+    conn.commit()
+    conn.close()
 
 if __name__ == "__main__":
+    init_db()
+    fetch_kline_stream()
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
