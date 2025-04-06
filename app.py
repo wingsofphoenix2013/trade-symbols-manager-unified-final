@@ -269,10 +269,10 @@ def on_message(ws, msg):
         conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
         c.execute("CREATE TABLE IF NOT EXISTS prices (id INTEGER PRIMARY KEY AUTOINCREMENT, symbol TEXT, timestamp TEXT, open REAL, high REAL, low REAL, close REAL)")
-        c.execute(\"\"\"
+        c.execute("""
             INSERT INTO prices (symbol, timestamp, open, high, low, close)
             VALUES (?, ?, ?, ?, ?, ?)
-        \"\"\", (
+        """, (
             symbol,
             datetime.utcfromtimestamp(k['t'] // 1000).isoformat(),
             float(k['o']), float(k['h']), float(k['l']), float(k['c'])
