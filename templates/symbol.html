@@ -1,25 +1,69 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <meta charset="UTF-8">
-    <title>{{ symbol }}</title>
-    <style>
-        .buyzone { background-color: #ccffcc; }
-        .sellzone { background-color: #ffcccc; }
-    </style>
+  <meta charset="UTF-8">
+  <title>{{ symbol }}</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background-color: #f4f7fa;
+      color: #333;
+      margin: 40px;
+    }
+    h1 {
+      text-align: center;
+      color: #2c3e50;
+    }
+    a {
+      display: inline-block;
+      margin-bottom: 20px;
+      color: #3498db;
+      text-decoration: none;
+    }
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      background: white;
+      box-shadow: 0 0 10px rgba(0,0,0,0.05);
+    }
+    th, td {
+      padding: 12px 16px;
+      border-bottom: 1px solid #eee;
+      text-align: center;
+    }
+    th {
+      background-color: #f9fafb;
+      color: #555;
+    }
+    button {
+      margin: 0 5px;
+      padding: 8px 16px;
+      background-color: #3498db;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: bold;
+    }
+    button:hover {
+      background-color: #2980b9;
+    }
+    .buyzone { background-color: #e0f7e0; }
+    .sellzone { background-color: #fde0e0; }
+  </style>
 </head>
 <body>
 <h1>Котировки: {{ symbol }}</h1>
 <a href="/">← Назад</a>
-<p>
+<p style="text-align:center;">
   <button onclick="setIntervalType('1m')">M1</button>
   <button onclick="setIntervalType('5m')">M5</button>
 </p>
-<table border="1">
+<table>
 <thead><tr><th>Время</th><th>Open</th><th>High</th><th>Low</th><th>Close</th><th>Сигнал</th></tr></thead>
 <tbody id="candles"></tbody>
 </table>
-<button onclick="loadMore()">Загрузить ещё</button>
+<p style="text-align:center;"><button onclick="loadMore()">Загрузить ещё</button></p>
 
 <script>
 let interval = "1m";
@@ -27,52 +71,45 @@ let offset = 0;
 const limit = 20;
 
 function setIntervalType(i) {
-    interval = i;
-    offset = 0;
-    document.getElementById("candles").innerHTML = "";
-    loadMore();
+  interval = i;
+  offset = 0;
+  document.getElementById("candles").innerHTML = "";
+  loadMore();
 }
 
 async function loadMore() {
-    const res = await fetch(`/api/candles/{{ symbol }}?interval=${interval}`);
-    const data = await res.json();
-    const tbody = document.getElementById("candles");
-    const sliced = data.slice(-(offset + limit), -offset || undefined).reverse();
-    sliced.forEach(row => {
-        const tr = document.createElement("tr");
-        ["time", "open", "high", "low", "close"].forEach(key => {
-            const td = document.createElement("td");
-            td.innerText = row[key];
-            tr.appendChild(td);
-        });
-
-        const signalTd = document.createElement("td");
-
-        if (interval === "5m") {
-            const zone = row.signal_type;
-            const text = row.signal;
-
-            if (zone === "BUYZONE") signalTd.className = "buyzone";
-            else if (zone === "SELLZONE") signalTd.className = "sellzone";
-
-            if (text.endsWith("(-)")) {
-                signalTd.innerText = text;
-            } else if (["BUYORDER", "SELLORDER"].includes(text) && zone) {
-                // зона пришла первой — отображать как ссылку
-                const a = document.createElement("a");
-                a.href = "/order-info";
-                a.innerText = text;
-                signalTd.appendChild(a);
-            } else if (["BUYORDER", "SELLORDER"].includes(text)) {
-                // только ORDER без зоны
-                signalTd.innerText = text + " (-)";
-            }
-        }
-
-        tr.appendChild(signalTd);
-        tbody.appendChild(tr);
+  const res = await fetch(`/api/candles/{{ symbol }}?interval=${interval}`);
+  const data = await res.json();
+  const tbody = document.getElementById("candles");
+  const sliced = data.slice(-(offset + limit), -offset || undefined).reverse();
+  sliced.forEach(row => {
+    const tr = document.createElement("tr");
+    ["time", "open", "high", "low", "close"].forEach(key => {
+      const td = document.createElement("td");
+      td.innerText = row[key];
+      tr.appendChild(td);
     });
-    offset += limit;
+
+    const signalTd = document.createElement("td");
+    if (interval === "5m") {
+      if (row.signal_type === "BUYZONE") signalTd.className = "buyzone";
+      else if (row.signal_type === "SELLZONE") signalTd.className = "sellzone";
+
+      if (row.signal && row.signal.endsWith("(-)")) {
+        signalTd.innerText = row.signal;
+      } else if (["BUYORDER", "SELLORDER"].includes(row.signal) && row.signal_type) {
+        const a = document.createElement("a");
+        a.href = "/order-info";
+        a.innerText = row.signal;
+        signalTd.appendChild(a);
+      } else if (["BUYORDER", "SELLORDER"].includes(row.signal)) {
+        signalTd.innerText = row.signal + " (-)";
+      }
+    }
+    tr.appendChild(signalTd);
+    tbody.appendChild(tr);
+  });
+  offset += limit;
 }
 loadMore();
 </script>
