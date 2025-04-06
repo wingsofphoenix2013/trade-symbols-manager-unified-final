@@ -260,16 +260,26 @@ def fetch_kline_stream():
         try:
             data = json.loads(msg)
             k = data['data']['k']
-            if not k['x']: return
+            if not k['x']:
+                return
+            symbol = data['data']['s'].lower()
+            close = k['c']
+            print(f"📦 Получено: {symbol} @ {close}")
+            sys.stdout.flush()
             conn = sqlite3.connect(DB_PATH)
             c = conn.cursor()
-            c.execute("INSERT INTO prices (symbol, timestamp, open, high, low, close) VALUES (?, ?, ?, ?, ?, ?)",
-                      (data['data']['s'].lower(), datetime.utcfromtimestamp(k['t'] // 1000).isoformat(),
-                       float(k['o']), float(k['h']), float(k['l']), float(k['c'])))
+            c.execute("""
+                INSERT INTO prices (symbol, timestamp, open, high, low, close)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (
+                symbol,
+                datetime.utcfromtimestamp(k['t'] // 1000).isoformat(),
+                float(k['o']), float(k['h']), float(k['l']), float(k['c'])
+            ))
             conn.commit()
             conn.close()
         except Exception as e:
-            print("Ошибка записи свечи:", e)
+            print("❌ Ошибка записи свечи:", e)
             sys.stdout.flush()
 
     def run():
@@ -281,14 +291,17 @@ def fetch_kline_stream():
                 symbols = [row[0].lower() for row in c.fetchall()]
                 conn.close()
                 if not symbols:
+                    print("⚠️ Нет пар для подписки. Ждём...")
                     time.sleep(5)
                     continue
                 streams = [f"{s}@kline_1m" for s in symbols]
                 url = "wss://fstream.binance.com/stream?streams=" + "/".join(streams)
+                print("🔁 Подписка на:", streams)
+                sys.stdout.flush()
                 ws = websocket.WebSocketApp(url, on_message=on_message)
                 ws.run_forever()
             except Exception as e:
-                print("Ошибка WebSocket:", e)
+                print("❌ Ошибка WebSocket:", e)
                 time.sleep(5)
 
     threading.Thread(target=run, daemon=True).start()
