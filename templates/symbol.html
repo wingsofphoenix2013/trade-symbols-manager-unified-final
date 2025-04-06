@@ -49,21 +49,23 @@ async function loadMore() {
         const signalTd = document.createElement("td");
 
         if (interval === "5m") {
-            if (row.signal_type === "BUYZONE") {
-                signalTd.className = "buyzone";
-            } else if (row.signal_type === "SELLZONE") {
-                signalTd.className = "sellzone";
-            }
+            const zone = row.signal_type;
+            const text = row.signal;
 
-            if (["BUYORDER", "SELLORDER"].includes(row.signal)) {
+            if (zone === "BUYZONE") signalTd.className = "buyzone";
+            else if (zone === "SELLZONE") signalTd.className = "sellzone";
+
+            if (text.endsWith("(-)")) {
+                signalTd.innerText = text;
+            } else if (["BUYORDER", "SELLORDER"].includes(text) && zone) {
+                // зона пришла первой — отображать как ссылку
                 const a = document.createElement("a");
                 a.href = "/order-info";
-                a.innerText = row.signal;
+                a.innerText = text;
                 signalTd.appendChild(a);
-            }
-
-            if (row.signal && row.signal.endsWith("(-)")) {
-                signalTd.innerText = row.signal;
+            } else if (["BUYORDER", "SELLORDER"].includes(text)) {
+                // только ORDER без зоны
+                signalTd.innerText = text + " (-)";
             }
         }
 
