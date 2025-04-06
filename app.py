@@ -232,7 +232,6 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
 
-
 @app.route("/webhook", methods=["POST"])
 def webhook():
     try:
@@ -248,8 +247,8 @@ def webhook():
         parts = message.strip().split()
         if len(parts) == 2:
             action = parts[0].upper()
-            symbol = parts[1].upper()
-            if action in ["BUY", "SELL", "BUYZONE", "SELLZONE"]:
+            symbol = parts[1].upper().replace(".P", "")
+            if action in ["BUY", "SELL", "BUYZONE", "SELLZONE", "BUYORDER", "SELLORDER"]:
                 timestamp = datetime.utcnow().replace(second=0, microsecond=0).isoformat()
                 conn = sqlite3.connect(DB_PATH)
                 c = conn.cursor()
