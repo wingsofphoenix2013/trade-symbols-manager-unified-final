@@ -49,19 +49,21 @@ async function loadMore() {
         const signalTd = document.createElement("td");
 
         if (interval === "5m") {
-            if (["BUYZONE", "SELLZONE"].includes(row.signal_type)) {
-                signalTd.className = row.signal_type === "BUYZONE" ? "buyzone" : "sellzone";
-                if (["BUYORDER", "SELLORDER"].includes(row.signal_text)) {
-                    const a = document.createElement("a");
-                    a.href = "/order-info";
-                    a.innerText = row.signal_text;
-                    signalTd.appendChild(a);
-                }
-            } else if (["BUYORDER (-)", "SELLORDER (-)"].includes(row.signal_text)) {
-                signalTd.className = row.signal_type === "BUYZONE" ? "buyzone" : "sellzone";
-                signalTd.innerText = row.signal_text;
-            } else if (["BUYORDER", "SELLORDER"].includes(row.signal_text)) {
-                signalTd.innerText = row.signal_text;
+            if (row.signal_type === "BUYZONE") {
+                signalTd.className = "buyzone";
+            } else if (row.signal_type === "SELLZONE") {
+                signalTd.className = "sellzone";
+            }
+
+            if (["BUYORDER", "SELLORDER"].includes(row.signal)) {
+                const a = document.createElement("a");
+                a.href = "/order-info";
+                a.innerText = row.signal;
+                signalTd.appendChild(a);
+            }
+
+            if (row.signal && row.signal.endsWith("(-)")) {
+                signalTd.innerText = row.signal;
             }
         }
 
