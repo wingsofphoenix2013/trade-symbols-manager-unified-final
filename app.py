@@ -279,11 +279,11 @@ def on_message(ws, msg):
         ))
         conn.commit()
         conn.close()
-        print(f\"✅ Записано: {symbol} {k['t']} {k['c']}\")
+        print(f"✅ Записано: {symbol} {k['t']} {k['c']}")
         sys.stdout.flush()
 
     except Exception as e:
-        print(\"❌ Ошибка записи свечи:\", e)
+        print("❌ Ошибка записи свечи:", e)
         sys.stdout.flush()
 
     def run():
