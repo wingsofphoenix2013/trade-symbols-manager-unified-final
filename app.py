@@ -196,7 +196,7 @@ def api_candles(symbol):
                 signal_text = orders[0][1] + " (-)"
                 signal_type = zones[-1][1]
 
-        # Расчёт канала
+        # Расчёт канала (исправленный)
         window = prices_map[max(0, i - length + 1): i + 1]
         if len(window) == length:
             closes = [w[4] for w in window]
@@ -206,12 +206,13 @@ def api_candles(symbol):
             sumX2 = sum((j + 1) ** 2 for j in range(length))
             slope = (length * sumXY - sumX * sumY) / (length * sumX2 - sumX ** 2)
             average = sumY / length
-            intercept = average - slope * sumX / length + slope
-            end = intercept
-            stdDev = sum((closes[j] - (intercept + slope * j)) ** 2 for j in range(length)) ** 0.5 / length
-            lower = round(end - deviation * stdDev, 5)
-            center = round(end, 5)
-            upper = round(end + deviation * stdDev, 5)
+            intercept = average - slope * (sumX / length)
+            center_index = length - 1
+            center = intercept + slope * center_index
+            stdDev = (sum((closes[j] - (intercept + slope * j)) ** 2 for j in range(length)) / length) ** 0.5
+            lower = round(center - deviation * stdDev, 5)
+            center = round(center, 5)
+            upper = round(center + deviation * stdDev, 5)
         else:
             lower = center = upper = ""
 
