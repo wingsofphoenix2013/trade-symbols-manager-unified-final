@@ -232,6 +232,7 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
 
+
 @app.route("/webhook", methods=["POST"])
 def webhook():
     try:
@@ -245,30 +246,38 @@ def webhook():
         sys.stdout.flush()
 
         parts = message.strip().split()
-        if len(parts) == 2:
-            action = parts[0].upper()
-            raw_symbol = parts[1].upper()
-            symbol = raw_symbol.replace(".P", "")
-            if action in ["BUY", "SELL", "BUYZONE", "SELLZONE", "BUYORDER", "SELLORDER"]:
-                timestamp = datetime.utcnow().replace(second=0, microsecond=0).isoformat()
-                conn = sqlite3.connect(DB_PATH)
-                c = conn.cursor()
-                c.execute("""
-                    CREATE TABLE IF NOT EXISTS signals (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        symbol TEXT,
-                        action TEXT,
-                        timestamp TEXT
-                    )
-                """)
-                c.execute("INSERT INTO signals (symbol, action, timestamp) VALUES (?, ?, ?)",
-                          (symbol, action, timestamp))
-                conn.commit()
-                conn.close()
+        if not parts or len(parts) < 2:
+            print("⚠️ Неверный формат webhook:", message)
+            sys.stdout.flush()
+            return jsonify({"status": "invalid format"}), 400
 
-                print(f"✅ Принят сигнал: {action} {symbol} @ {timestamp}")
-                sys.stdout.flush()
-                return jsonify({"status": "success"}), 200
+        action = parts[0].upper()
+        raw_symbol = parts[1].upper()
+        symbol = raw_symbol.replace(".P", "")
+
+        if action in ["BUY", "SELL", "BUYZONE", "SELLZONE", "BUYORDER", "SELLORDER"]:
+            timestamp = datetime.utcnow().replace(second=0, microsecond=0).isoformat()
+            conn = sqlite3.connect(DB_PATH)
+            c = conn.cursor()
+            c.execute("""
+                CREATE TABLE IF NOT EXISTS signals (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    symbol TEXT,
+                    action TEXT,
+                    timestamp TEXT
+                )
+            """)
+            c.execute("INSERT INTO signals (symbol, action, timestamp) VALUES (?, ?, ?)",
+                      (symbol, action, timestamp))
+            conn.commit()
+            conn.close()
+
+            print(f"✅ Принят сигнал: {action} {symbol} @ {timestamp}")
+            sys.stdout.flush()
+            return jsonify({"status": "success"}), 200
+        else:
+            print(f"⚠️ Неизвестный тип действия: {action}")
+            sys.stdout.flush()
     except Exception as e:
         print("Webhook error:", e)
         sys.stdout.flush()
