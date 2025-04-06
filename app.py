@@ -102,7 +102,7 @@ def api_candles(symbol):
         rows = c.fetchall()
 
         c.execute("SELECT timestamp, action FROM signals WHERE symbol = ?", (symbol.upper(),))
-        signal_rows = [(datetime.fromisoformat(row[0]), row[1]) for row in c.fetchall()]
+        signal_rows = [(datetime.fromisoformat(row[0]), row[1].upper()) for row in c.fetchall()]
         conn.close()
     except Exception as e:
         print("Ошибка чтения из БД:", e)
@@ -119,15 +119,36 @@ def api_candles(symbol):
         minute = ts.minute - ts.minute % group_minutes
         key = ts.replace(minute=minute, second=0, microsecond=0)
 
-        signal_in_window = [act for st, act in signal_rows if key <= st < key + timedelta(minutes=group_minutes)]
-        last_signal = signal_in_window[-1] if signal_in_window else None
+        orders = []
+        zones = []
+        for st, act in signal_rows:
+            if key <= st < key + timedelta(minutes=group_minutes):
+                if "ORDER" in act:
+                    orders.append((st, act))
+                elif "ZONE" in act:
+                    zones.append((st, act))
+
+        signal_text = ""
+        signal_type = ""
+
+        if interval == "5m":
+            if orders and (not zones or orders[0][0] < zones[0][0]):
+                signal_text = orders[0][1]
+                signal_type = ""
+            elif zones and (not orders or zones[0][0] < orders[0][0]):
+                signal_text = orders[0][1] if orders else ""
+                signal_type = zones[-1][1]
+            elif zones and orders:
+                signal_text = orders[0][1] + " (-)"
+                signal_type = zones[-1][1]
 
         group[key] = {
             "open": o,
             "high": h,
             "low": l,
             "close": c_,
-            "signal": last_signal
+            "signal_text": signal_text,
+            "signal_type": signal_type
         }
 
     candles = []
@@ -140,10 +161,12 @@ def api_candles(symbol):
             "high": c["high"],
             "low": c["low"],
             "close": c["close"],
-            "signal": c["signal"] or ""
+            "signal": c["signal_text"],
+            "signal_type": c["signal_type"]
         })
 
     return jsonify(candles or [])
+
 
 @app.route("/api/clear/<symbol>", methods=["DELETE"])
 def clear_symbol_data(symbol):
