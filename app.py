@@ -9,7 +9,6 @@ from zoneinfo import ZoneInfo
 app = Flask(__name__)
 DB_PATH = "/data/prices.db"
 
-# === CONFIG ===
 def load_channel_config():
     default = {"length": 50, "deviation": 2.0}
     try:
@@ -17,6 +16,10 @@ def load_channel_config():
             return json.load(f)
     except:
         return default
+
+@app.route("/")
+def index():
+    return render_template("index.html")
 
 @app.route("/channel-settings", methods=["GET", "POST"])
 def channel_settings():
@@ -55,7 +58,6 @@ def api_linreg(symbol):
     average = sumY / length
     intercept = average - slope * sumX / length + slope
 
-    start = intercept + slope * (length - 1)
     end = intercept
     stdDev = sum((closes[i] - (intercept + slope * i)) ** 2 for i in range(length)) ** 0.5 / length
 
