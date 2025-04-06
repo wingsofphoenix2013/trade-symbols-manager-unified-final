@@ -1,6 +1,13 @@
 <!DOCTYPE html>
 <html>
-<head><meta charset="UTF-8"><title>{{ symbol }}</title></head>
+<head>
+    <meta charset="UTF-8">
+    <title>{{ symbol }}</title>
+    <style>
+        .buyzone { background-color: #ccffcc; }
+        .sellzone { background-color: #ffcccc; }
+    </style>
+</head>
 <body>
 <h1>Котировки: {{ symbol }}</h1>
 <a href="/">← Назад</a>
@@ -33,11 +40,19 @@ async function loadMore() {
     const sliced = data.slice(-(offset + limit), -offset || undefined).reverse();
     sliced.forEach(row => {
         const tr = document.createElement("tr");
-        ["time", "open", "high", "low", "close", "signal"].forEach(key => {
+        ["time", "open", "high", "low", "close"].forEach(key => {
             const td = document.createElement("td");
-            td.innerText = row[key] || "";
+            td.innerText = row[key];
             tr.appendChild(td);
         });
+
+        const signalTd = document.createElement("td");
+        signalTd.innerText = row.signal || "";
+        if (interval === "5m") {
+            if (row.signal === "BUYZONE") signalTd.className = "buyzone";
+            if (row.signal === "SELLZONE") signalTd.className = "sellzone";
+        }
+        tr.appendChild(signalTd);
         tbody.appendChild(tr);
     });
     offset += limit;
