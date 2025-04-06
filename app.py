@@ -196,25 +196,30 @@ def api_candles(symbol):
                 signal_text = orders[0][1] + " (-)"
                 signal_type = zones[-1][1]
 
-        # Расчёт канала (исправленный)
-        window = prices_map[max(0, i - length + 1): i + 1]
-        if len(window) == length:
-            closes = [w[4] for w in window]
-            sumX = sum(j + 1 for j in range(length))
-            sumY = sum(closes)
-            sumXY = sum(closes[j] * (j + 1) for j in range(length))
-            sumX2 = sum((j + 1) ** 2 for j in range(length))
-            slope = (length * sumXY - sumX * sumY) / (length * sumX2 - sumX ** 2)
-            average = sumY / length
-            intercept = average - slope * (sumX / length)
-            center_index = length - 1
-            center = intercept + slope * center_index
-            stdDev = (sum((closes[j] - (intercept + slope * j)) ** 2 for j in range(length)) / length) ** 0.5
-            lower = round(center - deviation * stdDev, 5)
-            center = round(center, 5)
-            upper = round(center + deviation * stdDev, 5)
-        else:
-            lower = center = upper = ""
+        # === Расчёт канала (в стиле TradingView) ===
+	window = prices_map[max(0, i - length + 1): i + 1]
+	if len(window) == length:
+    		closes = [w[4] for w in window]
+
+    		# X: [1, 2, ..., length]
+    		x = list(range(1, length + 1))
+    		sumX = sum(x)
+    		sumY = sum(closes)
+    		sumXY = sum(closes[j] * x[j] for j in range(length))
+    		sumX2 = sum(x[j] ** 2 for j in range(length))
+
+    		slope = (length * sumXY - sumX * sumY) / (length * sumX2 - sumX ** 2)
+    		average = sumY / length
+    		intercept = average - slope * (sumX / length)
+
+    		center = intercept  # последняя точка регрессии (X=0)
+    		stdDev = sum((closes[j] - (intercept + slope * (x[j] - 1))) ** 2 for j in range(length)) ** 0.5 / length
+
+    		lower = round(center - deviation * stdDev, 5)
+    		center = round(center, 5)
+    		upper = round(center + deviation * stdDev, 5)
+	else:
+    		lower = center = upper = ""
 
         group.setdefault(key, {
             "open": o, "high": h, "low": l, "close": c_,
