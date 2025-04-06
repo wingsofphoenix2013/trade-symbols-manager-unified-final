@@ -119,12 +119,12 @@ def webhook():
         timestamp = datetime.utcnow().replace(second=0, microsecond=0).isoformat()
         conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
-        c.execute(\"\"\"CREATE TABLE IF NOT EXISTS signals (
+        c.execute("""CREATE TABLE IF NOT EXISTS signals (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             symbol TEXT,
             action TEXT,
             timestamp TEXT
-        )\"\"\")
+        )""")
         c.execute("INSERT INTO signals (symbol, action, timestamp) VALUES (?, ?, ?)", (symbol, action, timestamp))
         conn.commit()
         conn.close()
