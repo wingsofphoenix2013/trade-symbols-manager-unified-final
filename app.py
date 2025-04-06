@@ -1,12 +1,12 @@
+
 from flask import Flask, render_template, request, jsonify
 import sqlite3
 import os
 import threading
 import time
-import json
-from datetime import datetime, timedelta
+import sys
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
-from datetime import timezone
 
 app = Flask(__name__)
 DB_PATH = "/data/prices.db"
@@ -41,53 +41,10 @@ def delete_symbol(symbol):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute("DELETE FROM symbols WHERE name = ?", (symbol.upper(),))
+    c.execute("DELETE FROM prices WHERE symbol = ?", (symbol.lower(),))
     conn.commit()
     conn.close()
     return jsonify({"success": True})
-
-
-import sys
-
-
-@app.route("/webhook", methods=["POST"])
-def webhook():
-    try:
-        if request.is_json:
-            data = request.get_json()
-            message = data.get("message", "")
-        else:
-            message = request.data.decode("utf-8")
-
-        print("🚨 WEBHOOK СООБЩЕНИЕ:", message)
-        sys.stdout.flush()
-
-        parts = message.strip().split()
-        if len(parts) == 2:
-            action = parts[0].upper()
-            symbol = parts[1].upper().replace(".P", "")
-            if action in ["BUY", "SELL", "BUYZONE", "SELLZONE"]:
-                timestamp = datetime.utcnow().replace(second=0, microsecond=0).isoformat()
-                conn = sqlite3.connect(DB_PATH)
-                c = conn.cursor()
-                c.execute("""
-                    CREATE TABLE IF NOT EXISTS signals (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        symbol TEXT,
-                        action TEXT,
-                        timestamp TEXT
-                    )
-                """)
-                c.execute("INSERT INTO signals (symbol, action, timestamp) VALUES (?, ?, ?)", (symbol, action, timestamp))
-                conn.commit()
-                conn.close()
-
-                print(f"✅ Принят сигнал: {action} {symbol} @ {timestamp}")
-                sys.stdout.flush()
-                return jsonify({"status": "success"}), 200
-    except Exception as e:
-        print("Webhook error:", e)
-        sys.stdout.flush()
-    return jsonify({"status": "ignored"}), 400
 
 @app.route("/api/candles/<symbol>")
 def api_candles(symbol):
@@ -100,7 +57,6 @@ def api_candles(symbol):
         c = conn.cursor()
         c.execute("SELECT timestamp, open, high, low, close FROM prices WHERE symbol = ? ORDER BY timestamp ASC", (symbol.lower(),))
         rows = c.fetchall()
-
         c.execute("SELECT timestamp, action FROM signals WHERE symbol = ?", (symbol.upper(),))
         signal_rows = [(datetime.fromisoformat(row[0]), row[1].upper()) for row in c.fetchall()]
         conn.close()
@@ -167,72 +123,6 @@ def api_candles(symbol):
 
     return jsonify(candles or [])
 
-
-@app.route("/api/clear/<symbol>", methods=["DELETE"])
-def clear_symbol_data(symbol):
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("DELETE FROM symbols WHERE name = ?", (symbol.upper(),))
-    c.execute("DELETE FROM prices WHERE symbol = ?", (symbol.lower(),))
-    conn.commit()
-    conn.close()
-    return jsonify({"success": True})
-
-def init_db():
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("CREATE TABLE IF NOT EXISTS symbols (name TEXT PRIMARY KEY)")
-    c.execute("CREATE TABLE IF NOT EXISTS prices (id INTEGER PRIMARY KEY AUTOINCREMENT, symbol TEXT, timestamp TEXT, open REAL, high REAL, low REAL, close REAL)")
-    conn.commit()
-    conn.close()
-
-def fetch_kline_stream():
-    import websocket
-
-    def on_message(ws, msg):
-        try:
-            data = json.loads(msg)
-            k = data['data']['k']
-            if not k['x']:
-                return
-            conn = sqlite3.connect(DB_PATH)
-            c = conn.cursor()
-            c.execute("INSERT INTO prices (symbol, timestamp, open, high, low, close) VALUES (?, ?, ?, ?, ?, ?)",
-                      (data['data']['s'].lower(), datetime.utcfromtimestamp(k['t'] // 1000).isoformat(),
-                       float(k['o']), float(k['h']), float(k['l']), float(k['c'])))
-            conn.commit()
-            conn.close()
-        except Exception as e:
-            print("Ошибка записи свечи:", e)
-
-    def run():
-        while True:
-            try:
-                conn = sqlite3.connect(DB_PATH)
-                c = conn.cursor()
-                c.execute("SELECT name FROM symbols")
-                symbols = [row[0].lower() for row in c.fetchall()]
-                conn.close()
-                if not symbols:
-                    time.sleep(5)
-                    continue
-                streams = [f"{s}@kline_1m" for s in symbols]
-                url = "wss://fstream.binance.com/stream?streams=" + "/".join(streams)
-                ws = websocket.WebSocketApp(url, on_message=on_message)
-                ws.run_forever()
-            except Exception as e:
-                print("Ошибка WebSocket:", e)
-                time.sleep(5)
-
-    threading.Thread(target=run, daemon=True).start()
-
-if __name__ == "__main__":
-    init_db()
-    fetch_kline_stream()
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
-
-
 @app.route("/webhook", methods=["POST"])
 def webhook():
     try:
@@ -288,8 +178,76 @@ def webhook():
 
     except Exception as e:
         print("Webhook error:", e)
+        print("EXCEPTION TYPE:", type(e))
+        print("EXCEPTION DETAILS:", str(e))
         sys.stdout.flush()
 
     print("⚠️ Дошли до fallback — ничего не вернули явно.")
     sys.stdout.flush()
     return jsonify({"status": "fallback reached"}), 400
+
+def init_db():
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("CREATE TABLE IF NOT EXISTS symbols (name TEXT PRIMARY KEY)")
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS prices (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            symbol TEXT,
+            timestamp TEXT,
+            open REAL,
+            high REAL,
+            low REAL,
+            close REAL
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+def fetch_kline_stream():
+    import websocket
+    import json
+
+    def on_message(ws, msg):
+        try:
+            data = json.loads(msg)
+            k = data['data']['k']
+            if not k['x']:
+                return
+            conn = sqlite3.connect(DB_PATH)
+            c = conn.cursor()
+            c.execute("INSERT INTO prices (symbol, timestamp, open, high, low, close) VALUES (?, ?, ?, ?, ?, ?)",
+                      (data['data']['s'].lower(), datetime.utcfromtimestamp(k['t'] // 1000).isoformat(),
+                       float(k['o']), float(k['h']), float(k['l']), float(k['c'])))
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            print("Ошибка записи свечи:", e)
+            sys.stdout.flush()
+
+    def run():
+        while True:
+            try:
+                conn = sqlite3.connect(DB_PATH)
+                c = conn.cursor()
+                c.execute("SELECT name FROM symbols")
+                symbols = [row[0].lower() for row in c.fetchall()]
+                conn.close()
+                if not symbols:
+                    time.sleep(5)
+                    continue
+                streams = [f"{s}@kline_1m" for s in symbols]
+                url = "wss://fstream.binance.com/stream?streams=" + "/".join(streams)
+                ws = websocket.WebSocketApp(url, on_message=on_message)
+                ws.run_forever()
+            except Exception as e:
+                print("Ошибка WebSocket:", e)
+                time.sleep(5)
+
+    threading.Thread(target=run, daemon=True).start()
+
+if __name__ == "__main__":
+    init_db()
+    fetch_kline_stream()
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
