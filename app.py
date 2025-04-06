@@ -5,6 +5,8 @@ import threading
 import time
 import json
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
+from datetime import timezone
 
 app = Flask(__name__)
 DB_PATH = "/data/prices.db"
@@ -86,8 +88,6 @@ def webhook():
         print("Webhook error:", e)
         sys.stdout.flush()
     return jsonify({"status": "ignored"}), 400
-
-from zoneinfo import ZoneInfo
 
 @app.route("/api/candles/<symbol>")
 def api_candles(symbol):
