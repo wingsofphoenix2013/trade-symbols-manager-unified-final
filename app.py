@@ -278,8 +278,8 @@ def webhook():
             print(f"⚠️ Неизвестный тип действия: {action}")
             sys.stdout.flush()
     except Exception as e:
-        import traceback
         print("Webhook error:", e)
-        traceback.print_exc()
+        print("EXCEPTION TYPE:", type(e))
+        print("EXCEPTION DETAILS:", str(e))
         sys.stdout.flush()
     return jsonify({"status": "ignored"}), 400
