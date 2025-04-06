@@ -247,7 +247,8 @@ def webhook():
         parts = message.strip().split()
         if len(parts) == 2:
             action = parts[0].upper()
-            symbol = parts[1].upper().replace(".P", "")
+            raw_symbol = parts[1].upper()
+            symbol = raw_symbol.replace(".P", "")
             if action in ["BUY", "SELL", "BUYZONE", "SELLZONE", "BUYORDER", "SELLORDER"]:
                 timestamp = datetime.utcnow().replace(second=0, microsecond=0).isoformat()
                 conn = sqlite3.connect(DB_PATH)
@@ -260,7 +261,8 @@ def webhook():
                         timestamp TEXT
                     )
                 """)
-                c.execute("INSERT INTO signals (symbol, action, timestamp) VALUES (?, ?, ?)", (symbol, action, timestamp))
+                c.execute("INSERT INTO signals (symbol, action, timestamp) VALUES (?, ?, ?)",
+                          (symbol, action, timestamp))
                 conn.commit()
                 conn.close()
 
