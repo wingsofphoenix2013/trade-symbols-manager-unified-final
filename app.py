@@ -8,7 +8,6 @@ from zoneinfo import ZoneInfo
 import threading
 import time
 import websocket
-import traceback
 
 app = Flask(__name__)
 DB_PATH = "/data/prices.db"
@@ -145,14 +144,12 @@ def webhook():
         timestamp = datetime.utcnow().replace(second=0, microsecond=0).isoformat()
         conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
-        c.execute("""
-            CREATE TABLE IF NOT EXISTS signals (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                symbol TEXT,
-                action TEXT,
-                timestamp TEXT
-            )
-        """)
+        c.execute("""CREATE TABLE IF NOT EXISTS signals (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            symbol TEXT,
+            action TEXT,
+            timestamp TEXT
+        )""")
         c.execute("INSERT INTO signals (symbol, action, timestamp) VALUES (?, ?, ?)", (symbol, action, timestamp))
         conn.commit()
         conn.close()
@@ -161,87 +158,19 @@ def webhook():
 
     except Exception as e:
         print("Webhook error:", e)
-        traceback.print_exc()
         sys.stdout.flush()
     return jsonify({"status": "ignored"}), 400
 
-@app.route("/api/candles/<symbol>")
-def api_candles(symbol):
-    interval = request.args.get("interval", "1m")
-    if interval not in ["1m", "5m"]:
-        return jsonify([])
+# === BINANCE ===
+def init_db():
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute("CREATE TABLE IF NOT EXISTS symbols (name TEXT PRIMARY KEY)")
+    c.execute("CREATE TABLE IF NOT EXISTS signals (id INTEGER PRIMARY KEY AUTOINCREMENT, symbol TEXT, action TEXT, timestamp TEXT)")
+    c.execute("CREATE TABLE IF NOT EXISTS prices (id INTEGER PRIMARY KEY AUTOINCREMENT, symbol TEXT, timestamp TEXT, open REAL, high REAL, low REAL, close REAL)")
+    conn.commit()
+    conn.close()
 
-    try:
-        conn = sqlite3.connect(DB_PATH)
-        c = conn.cursor()
-        c.execute("SELECT timestamp, open, high, low, close FROM prices WHERE symbol = ? ORDER BY timestamp ASC", (symbol.lower(),))
-        rows = c.fetchall()
-        c.execute("SELECT timestamp, action FROM signals WHERE symbol = ?", (symbol.upper(),))
-        signal_rows = [(datetime.fromisoformat(row[0]), row[1].upper()) for row in c.fetchall()]
-        conn.close()
-    except Exception as e:
-        print("Ошибка чтения из БД:", e)
-        return jsonify([])
-
-    group_minutes = 5 if interval == "5m" else 1
-    group = {}
-
-    for ts_str, o, h, l, c_ in rows:
-        try:
-            ts = datetime.fromisoformat(ts_str)
-        except Exception:
-            continue
-        minute = ts.minute - ts.minute % group_minutes
-        key = ts.replace(minute=minute, second=0, microsecond=0)
-
-        orders = []
-        zones = []
-        for st, act in signal_rows:
-            if key <= st < key + timedelta(minutes=group_minutes):
-                if "ORDER" in act:
-                    orders.append((st, act))
-                elif "ZONE" in act:
-                    zones.append((st, act))
-
-        signal_text = ""
-        signal_type = ""
-
-        if interval == "5m":
-            if orders and (not zones or orders[0][0] < zones[0][0]):
-                signal_text = orders[0][1] + " (-)"
-            elif zones and (not orders or zones[0][0] < orders[0][0]):
-                signal_text = orders[0][1] if orders else ""
-                signal_type = zones[-1][1]
-            elif zones and orders:
-                signal_text = orders[0][1] + " (-)"
-                signal_type = zones[-1][1]
-
-        group[key] = {
-            "open": o,
-            "high": h,
-            "low": l,
-            "close": c_,
-            "signal_text": signal_text,
-            "signal_type": signal_type
-        }
-
-    candles = []
-    for k in sorted(group.keys()):
-        local_time = k.replace(tzinfo=timezone.utc).astimezone(ZoneInfo("Europe/Kyiv"))
-        c = group[k]
-        candles.append({
-            "time": local_time.strftime("%Y-%m-%d %H:%M"),
-            "open": c["open"],
-            "high": c["high"],
-            "low": c["low"],
-            "close": c["close"],
-            "signal": c["signal_text"],
-            "signal_type": c["signal_type"]
-        })
-
-    return jsonify(candles or [])
-
-# === BINANCE STREAM ===
 def fetch_kline_stream():
     def on_message(ws, msg):
         try:
@@ -251,17 +180,6 @@ def fetch_kline_stream():
                 return
             conn = sqlite3.connect(DB_PATH)
             c = conn.cursor()
-            c.execute("""
-                CREATE TABLE IF NOT EXISTS prices (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    symbol TEXT,
-                    timestamp TEXT,
-                    open REAL,
-                    high REAL,
-                    low REAL,
-                    close REAL
-                )
-            """)
             c.execute("INSERT INTO prices (symbol, timestamp, open, high, low, close) VALUES (?, ?, ?, ?, ?, ?)",
                       (data['data']['s'].lower(), datetime.utcfromtimestamp(k['t'] // 1000).isoformat(),
                        float(k['o']), float(k['h']), float(k['l']), float(k['c'])))
@@ -291,33 +209,6 @@ def fetch_kline_stream():
                 time.sleep(5)
 
     threading.Thread(target=run, daemon=True).start()
-
-# === INIT DB ===
-def init_db():
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("CREATE TABLE IF NOT EXISTS symbols (name TEXT PRIMARY KEY)")
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS signals (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            symbol TEXT,
-            action TEXT,
-            timestamp TEXT
-        )
-    """)
-    c.execute("""
-        CREATE TABLE IF NOT EXISTS prices (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            symbol TEXT,
-            timestamp TEXT,
-            open REAL,
-            high REAL,
-            low REAL,
-            close REAL
-        )
-    """)
-    conn.commit()
-    conn.close()
 
 if __name__ == "__main__":
     init_db()
