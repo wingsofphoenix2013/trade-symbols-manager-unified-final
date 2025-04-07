@@ -590,14 +590,14 @@ def api_live_channel(symbol):
 
     angle_deg = round(degrees(atan(slope)), 2)
 
-    if angle_deg > 3:
+    if angle_deg > 2:
         direction = "восходящий ↗️"
         color = "green"
-    elif angle_deg < -3:
+    elif angle_deg < -2:
         direction = "нисходящий ↘️"
         color = "red"
     else:
-        direction = "флет →"
+        direction = "флет ➡️"
         color = "black"
 
     signal = ""
