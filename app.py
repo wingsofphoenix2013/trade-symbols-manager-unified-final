@@ -312,8 +312,8 @@ def fetch_kline_stream():
 @app.route("/debug/<symbol>")
 def debug_channel(symbol):
     interval = request.args.get("interval", "5m")
-    if interval not in ["1m", "5m"]:
-        return "<h3>Invalid interval</h3>"
+    if interval != "5m":
+        return "<h3>Поддерживается только interval=5m</h3>"
 
     try:
         config = load_channel_config()
@@ -328,28 +328,32 @@ def debug_channel(symbol):
     except Exception as e:
         return f"<h3>DB error: {e}</h3>"
 
-    group_minutes = 5 if interval == "5m" else 1
-    prices_map = []
+    from collections import defaultdict
+
+    grouped = defaultdict(list)
     for ts_str, o, h, l, c_ in rows:
         try:
             ts = datetime.fromisoformat(ts_str)
-        except Exception:
+        except:
             continue
-        prices_map.append((ts, float(o), float(h), float(l), float(c_)))
+        # Приводим к точной 5-минутной границе Binance (UTC)
+        minute = (ts.minute // 5) * 5
+        ts_binance = ts.replace(minute=minute, second=0, microsecond=0)
+        grouped[ts_binance].append((float(o), float(h), float(l), float(c_)))
 
-    # агрегируем в 5-минутные свечи
-    grouped = {}
-    for ts, o, h, l, c_ in prices_map:
-        minute = ts.minute - ts.minute % group_minutes
-        key = ts.replace(minute=minute, second=0, microsecond=0)
-        if key not in grouped:
-            grouped[key] = {"open": o, "high": h, "low": l, "close": c_}
-        else:
-            grouped[key]["high"] = max(grouped[key]["high"], h)
-            grouped[key]["low"] = min(grouped[key]["low"], l)
-            grouped[key]["close"] = c_
+    # Строим 5m свечи
+    candles = []
+    for ts in sorted(grouped.keys()):
+        bucket = grouped[ts]
+        if len(bucket) == 0:
+            continue
+        o = bucket[0][0]
+        h = max(x[1] for x in bucket)
+        l = min(x[2] for x in bucket)
+        c_ = bucket[-1][3]
+        candles.append((ts, {"open": o, "high": h, "low": l, "close": c_}))
 
-    candles = list(sorted(grouped.items()))[-length:]
+    candles = candles[-length:]
     if len(candles) < length:
         return "<h3>Недостаточно данных для расчёта канала</h3>"
 
