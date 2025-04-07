@@ -376,27 +376,37 @@ def debug_channel(symbol):
         c_ = bucket[-1][3]
         candles.append((ts, {"open": o, "high": h, "low": l, "close": c_}))
 
-    if len(candles) < length - (1 if include_current else 0):
-        return "<h3>Недостаточно данных</h3>"
+    if len(candles) < length - 1:
+        return "<h3>Недостаточно исторических данных</h3>"
 
-    closes = [c[1]["close"] for c in candles[-(length - (1 if include_current else 0)):]]
-    if include_current:
-        price = latest_price.get(symbol.lower())
-        if price:
-            closes.append(price)
-    if len(closes) != length:
-        return "<h3>Не удалось получить текущую цену</h3>"
+    # последние 49 закрытых
+    closes = [c[1]["close"] for c in candles[-(length - 1):]]
 
+    # получаем текущую цену
+    price = latest_price.get(symbol.lower())
+    if include_current and price:
+        closes_for_line = closes + [price]
+    else:
+        closes_for_line = closes
+
+    if len(closes_for_line) != length:
+        return "<h3>Недостаточно данных для линии</h3>"
+
+    # рассчитываем slope/line с текущей ценой
     x = list(range(1, length + 1))
     sumX = sum(x)
-    sumY = sum(closes)
-    sumXY = sum(closes[j] * x[j] for j in range(length))
+    sumY = sum(closes_for_line)
+    sumXY = sum(closes_for_line[j] * x[j] for j in range(length))
     sumX2 = sum(x[j] ** 2 for j in range(length))
     slope = (length * sumXY - sumX * sumY) / (length * sumX2 - sumX ** 2)
     intercept = (sumY / length) - slope * ((length - 1) / 2)
     line = [intercept + slope * (length - j - 1) for j in range(length)]
+
     center = sum(line) / length
-    stdDev = (sum((closes[j] - line[j]) ** 2 for j in range(length)) / (length - 1)) ** 0.5
+
+    # stdDev считаем только по 49 закрытым свечам
+    line_for_std = line[:length - 1]
+    stdDev = (sum((closes[j] - line_for_std[j]) ** 2 for j in range(length - 1)) / (length - 2)) ** 0.5
 
     lower = round(center - deviation * stdDev, 5)
     center = round(center, 5)
@@ -405,7 +415,7 @@ def debug_channel(symbol):
     angle_deg = round(degrees(atan(slope)), 2)
 
     rows_html = ""
-    recent_candles = candles[-(length - (1 if include_current else 0)):]
+    recent_candles = candles[-(length - 1):]
     for i in range(len(recent_candles)):
         ts = recent_candles[i][0].astimezone(ZoneInfo("Europe/Kyiv")).strftime("%Y-%m-%d %H:%M")
         o = recent_candles[i][1]["open"]
@@ -414,8 +424,8 @@ def debug_channel(symbol):
         c_ = recent_candles[i][1]["close"]
         rows_html += f"<tr><td>{ts}</td><td>{o}</td><td>{h}</td><td>{l}</td><td>{c_}</td><td>{round(line[i],5)}</td></tr>"
 
-    if include_current and len(line) == length:
-        rows_html += f"<tr><td><i>Current</i></td><td colspan='4'>Текущая цена: {closes[-1]}</td><td>{round(line[-1],5)}</td></tr>"
+    if include_current and price:
+        rows_html += f"<tr><td><i>Current</i></td><td colspan='4'>Текущая цена: {price}</td><td>{round(line[-1],5)}</td></tr>"
 
     return f"""
     <html>
@@ -447,7 +457,6 @@ def debug_channel(symbol):
     </body>
     </html>
     """
-
 # === МОДУЛЬ 8: Поток Binance @trade — хранение текущих цен в latest_price ===
 
 latest_price = {}
