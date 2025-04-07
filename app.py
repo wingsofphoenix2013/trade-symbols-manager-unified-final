@@ -199,20 +199,27 @@ def api_candles(symbol):
                 signal_text = orders[0][1] + " (-)"
                 signal_type = zones[-1][1]
 
-        # === Расчёт канала (в стиле TradingView) ===
+        # === Расчёт канала (в точности как в TradingView) ===
         window = prices_map[max(0, i - length + 1): i + 1]
         if len(window) == length:
             closes = [w[4] for w in window]
-            x = list(range(1, length + 1))
+            x = list(range(1, length + 1))  # X: [1, 2, ..., length]
             sumX = sum(x)
             sumY = sum(closes)
             sumXY = sum(closes[j] * x[j] for j in range(length))
             sumX2 = sum(x[j] ** 2 for j in range(length))
+
             slope = (length * sumXY - sumX * sumY) / (length * sumX2 - sumX ** 2)
             average = sumY / length
-            intercept = average - slope * (sumX / length)
+
+            # Совпадает с Pine Script: mid - slope * floor(len/2) + correction
+            middle_index = (length - 1) / 2
+            intercept = average - slope * middle_index
+
+            # Центр канала — это intercept (текущая точка линии)
             center = intercept
-            stdDev = (sum((closes[j] - (intercept + slope * (x[j] - 1))) ** 2 for j in range(length)) / length) ** 0.5
+            stdDev = (sum((closes[j] - (intercept + slope * (length - j - 1))) ** 2 for j in range(length)) / length) ** 0.5
+
             lower = round(center - deviation * stdDev, 5)
             center = round(center, 5)
             upper = round(center + deviation * stdDev, 5)
