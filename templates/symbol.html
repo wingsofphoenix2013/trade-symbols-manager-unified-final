@@ -2,18 +2,18 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8" />
-  <title>Текущая свеча</title>
+  <title>Символ</title>
 </head>
 <body>
 <h2>Текущая 5-минутная свеча</h2>
 <table id="live-candle" style="width:100%; border-collapse: collapse; font-family: sans-serif; margin-bottom: 20px;">
   <thead>
     <tr style="background:#eee; text-align: right;">
-      <th style="padding: 6px; border: 1px solid #ccc;">Время</th>
-      <th style="padding: 6px; border: 1px solid #ccc;">Цена открытия</th>
-      <th style="padding: 6px; border: 1px solid #ccc;">Текущая цена</th>
-      <th style="padding: 6px; border: 1px solid #ccc;">Канал</th>
-      <th style="padding: 6px; border: 1px solid #ccc;">Сигнал</th>
+      <th>Время</th>
+      <th>Цена открытия</th>
+      <th>Текущая цена</th>
+      <th>Канал</th>
+      <th>Сигнал</th>
     </tr>
   </thead>
   <tbody>
@@ -27,8 +27,25 @@
   </tbody>
 </table>
 
+<h2>История свечей</h2>
+<table id="history-table" style="width:100%; border-collapse: collapse; font-family: sans-serif;">
+  <thead>
+    <tr style="background:#ddd; text-align: right;">
+      <th>Время</th>
+      <th>Open</th>
+      <th>High</th>
+      <th>Low</th>
+      <th>Close</th>
+      <th>Канал</th>
+      <th>Сигнал</th>
+    </tr>
+  </thead>
+  <tbody id="history-body"></tbody>
+</table>
+
 <script>
   const symbolName = window.location.pathname.split("/").pop();
+  let lastCandleTime = null;
 
   async function updateLiveChannel(symbol) {
     try {
@@ -54,7 +71,46 @@
     }
   }
 
+  async function loadHistorical(symbol) {
+    try {
+      const res = await fetch(`/api/candles/${symbol}?interval=5m`);
+      const data = await res.json();
+      const body = document.getElementById("history-body");
+      body.innerHTML = "";
+      data.slice(-50).reverse().forEach(row => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${row.time}</td>
+          <td>${row.open}</td>
+          <td>${row.high}</td>
+          <td>${row.low}</td>
+          <td>${row.close}</td>
+          <td>${row.channel}</td>
+          <td>${row.signal}</td>
+        `;
+        body.appendChild(tr);
+      });
+      if (data.length > 0) {
+        lastCandleTime = data[data.length - 1].time;
+      }
+    } catch (e) {
+      console.error("Ошибка загрузки истории", e);
+    }
+  }
+
+  function checkNewCandle() {
+    const now = new Date();
+    const minutes = now.getMinutes();
+    const rounded = Math.floor(minutes / 5) * 5;
+    const candleTime = `${now.getFullYear()}-${(now.getMonth()+1).toString().padStart(2,'0')}-${now.getDate().toString().padStart(2,'0')} ${now.getHours().toString().padStart(2,'0')}:${rounded.toString().padStart(2,'0')}`;
+    if (candleTime !== lastCandleTime) {
+      loadHistorical(symbolName);
+    }
+  }
+
   setInterval(() => updateLiveChannel(symbolName), 1000);
+  setInterval(() => checkNewCandle(), 5000);
+  loadHistorical(symbolName);
 </script>
 </body>
 </html>
