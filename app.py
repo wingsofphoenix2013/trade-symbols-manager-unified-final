@@ -359,12 +359,10 @@ def debug_channel(symbol):
             ts = datetime.fromisoformat(ts_str)
         except:
             continue
-        # Приводим к точной 5-минутной границе Binance (UTC)
         minute = (ts.minute // 5) * 5
         ts_binance = ts.replace(minute=minute, second=0, microsecond=0)
         grouped[ts_binance].append((float(o), float(h), float(l), float(c_)))
 
-    # Строим 5m свечи
     candles = []
     for ts in sorted(grouped.keys()):
         bucket = grouped[ts]
@@ -391,8 +389,8 @@ def debug_channel(symbol):
     mid_index = (length - 1) / 2
     intercept = average - slope * mid_index
     line = [intercept + slope * (length - j - 1) for j in range(length)]
+    center = sum(line) / length  # ключевое исправление
     stdDev = (sum((closes[j] - line[j]) ** 2 for j in range(length)) / length) ** 0.5
-    center = intercept
     lower = round(center - deviation * stdDev, 5)
     center = round(center, 5)
     upper = round(center + deviation * stdDev, 5)
