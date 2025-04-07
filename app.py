@@ -337,18 +337,23 @@ def debug_channel(symbol):
             continue
         prices_map.append((ts, float(o), float(h), float(l), float(c_)))
 
-    # берём последние length свечей
+    # агрегируем в 5-минутные свечи
     grouped = {}
     for ts, o, h, l, c_ in prices_map:
         minute = ts.minute - ts.minute % group_minutes
         key = ts.replace(minute=minute, second=0, microsecond=0)
-        grouped[key] = (o, h, l, c_)
+        if key not in grouped:
+            grouped[key] = {"open": o, "high": h, "low": l, "close": c_}
+        else:
+            grouped[key]["high"] = max(grouped[key]["high"], h)
+            grouped[key]["low"] = min(grouped[key]["low"], l)
+            grouped[key]["close"] = c_
 
     candles = list(sorted(grouped.items()))[-length:]
     if len(candles) < length:
         return "<h3>Недостаточно данных для расчёта канала</h3>"
 
-    closes = [c[1][3] for c in candles]
+    closes = [c[1]["close"] for c in candles]
     x = list(range(1, length + 1))
     sumX = sum(x)
     sumY = sum(closes)
@@ -368,7 +373,10 @@ def debug_channel(symbol):
     rows_html = ""
     for i in range(length):
         ts = candles[i][0].astimezone(ZoneInfo("Europe/Kyiv")).strftime("%Y-%m-%d %H:%M")
-        o, h, l, c_ = candles[i][1]
+        o = candles[i][1]["open"]
+        h = candles[i][1]["high"]
+        l = candles[i][1]["low"]
+        c_ = candles[i][1]["close"]
         rows_html += f"<tr><td>{ts}</td><td>{o}</td><td>{h}</td><td>{l}</td><td>{c_}</td><td>{round(line[i],5)}</td></tr>"
 
     return f"""
