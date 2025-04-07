@@ -58,8 +58,6 @@
 </table>
 <button onclick="loadMore()" id="load-more-btn">Загрузить ещё</button>
 
-
-
 <script>
   const symbolName = window.location.pathname.split("/").pop();
   let lastCandleTime = null;
@@ -88,11 +86,6 @@
 
       const sig = document.getElementById("lc-signal");
       sig.textContent = data.signal || "--";
-      sig.className = "";
-      if (data.signal?.includes("BUYZONE")) sig.classList.add("zone-buy");
-      if (data.signal?.includes("SELLZONE")) sig.classList.add("zone-sell");
-      if (data.signal?.includes("BUYORDER")) sig.classList.add("green");
-      if (data.signal?.includes("SELLORDER")) sig.classList.add("red");
     } catch (e) {
       console.error("Ошибка live channel", e);
     }
@@ -106,7 +99,6 @@
       const slice = data.slice(-offset - limit, -offset || undefined).reverse();
       slice.forEach(row => {
         const tr = document.createElement("tr");
-        const signalClass = getSignalClass(row.signal);
         tr.innerHTML = `
           <td>${row.time}</td>
           <td>${row.open}</td>
@@ -114,7 +106,7 @@
           <td>${row.low}</td>
           <td>${row.close}</td>
           <td>${row.channel}</td>
-          <td class="${signalClass}">${row.signal || "--"}</td>
+          <td>${row.signal || "--"}</td>
         `;
         body.appendChild(tr);
       });
@@ -131,15 +123,6 @@
     }
   }
 
-  function getSignalClass(signal) {
-    if (!signal) return "";
-    if (signal.includes("BUYZONE")) return "zone-buy";
-    if (signal.includes("SELLZONE")) return "zone-sell";
-    if (signal.includes("BUYORDER")) return "green";
-    if (signal.includes("SELLORDER")) return "red";
-    return "";
-  }
-
   function loadMore() {
     offset += limit;
     loadHistorical();
@@ -149,8 +132,6 @@
     const now = new Date();
     const min = now.getMinutes();
     const sec = now.getSeconds();
-
-    // Проверка выполняется только на 1-й минуте пятиминутки
     if (min % 5 === 1 && sec < 5) {
       fetch(`/api/candles/${symbolName}?interval=5m`)
         .then(res => res.json())
@@ -171,6 +152,5 @@
   setInterval(() => checkNewCandle(), 5000);
   loadHistorical();
 </script>
-
 </body>
 </html>
