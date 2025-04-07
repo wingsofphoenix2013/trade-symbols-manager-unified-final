@@ -307,7 +307,98 @@ def fetch_kline_stream():
                 time.sleep(5)
 
     threading.Thread(target=run, daemon=True).start()
+# === МОДУЛЬ 7: Отладочная страница для анализа канала ===
 
+@app.route("/debug/<symbol>")
+def debug_channel(symbol):
+    interval = request.args.get("interval", "5m")
+    if interval not in ["1m", "5m"]:
+        return "<h3>Invalid interval</h3>"
+
+    try:
+        config = load_channel_config()
+        length = config.get("length", 50)
+        deviation = config.get("deviation", 2.0)
+
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute("SELECT timestamp, open, high, low, close FROM prices WHERE symbol = ? ORDER BY timestamp ASC", (symbol.lower(),))
+        rows = c.fetchall()
+        conn.close()
+    except Exception as e:
+        return f"<h3>DB error: {e}</h3>"
+
+    group_minutes = 5 if interval == "5m" else 1
+    prices_map = []
+    for ts_str, o, h, l, c_ in rows:
+        try:
+            ts = datetime.fromisoformat(ts_str)
+        except Exception:
+            continue
+        prices_map.append((ts, float(o), float(h), float(l), float(c_)))
+
+    # берём последние length свечей
+    grouped = {}
+    for ts, o, h, l, c_ in prices_map:
+        minute = ts.minute - ts.minute % group_minutes
+        key = ts.replace(minute=minute, second=0, microsecond=0)
+        grouped[key] = (o, h, l, c_)
+
+    candles = list(sorted(grouped.items()))[-length:]
+    if len(candles) < length:
+        return "<h3>Недостаточно данных для расчёта канала</h3>"
+
+    closes = [c[1][3] for c in candles]
+    x = list(range(1, length + 1))
+    sumX = sum(x)
+    sumY = sum(closes)
+    sumXY = sum(closes[j] * x[j] for j in range(length))
+    sumX2 = sum(x[j] ** 2 for j in range(length))
+    slope = (length * sumXY - sumX * sumY) / (length * sumX2 - sumX ** 2)
+    average = sumY / length
+    mid_index = (length - 1) / 2
+    intercept = average - slope * mid_index
+    line = [intercept + slope * (length - j - 1) for j in range(length)]
+    stdDev = (sum((closes[j] - line[j]) ** 2 for j in range(length)) / length) ** 0.5
+    center = intercept
+    lower = round(center - deviation * stdDev, 5)
+    center = round(center, 5)
+    upper = round(center + deviation * stdDev, 5)
+
+    rows_html = ""
+    for i in range(length):
+        ts = candles[i][0].astimezone(ZoneInfo("Europe/Kyiv")).strftime("%Y-%m-%d %H:%M")
+        o, h, l, c_ = candles[i][1]
+        rows_html += f"<tr><td>{ts}</td><td>{o}</td><td>{h}</td><td>{l}</td><td>{c_}</td><td>{round(line[i],5)}</td></tr>"
+
+    return f"""
+    <html>
+    <head>
+        <title>Debug: {symbol.upper()}</title>
+        <style>
+            table {{ font-family: sans-serif; border-collapse: collapse; width: 100%; }}
+            th, td {{ border: 1px solid #aaa; padding: 6px; text-align: right; }}
+            th {{ background-color: #f0f0f0; }}
+            h2 {{ font-family: sans-serif; }}
+            .box {{ font-family: monospace; margin-top: 10px; padding: 10px; background: #f8f8f8; border: 1px solid #ccc; }}
+        </style>
+    </head>
+    <body>
+        <h2>DEBUG: {symbol.upper()} ({interval})</h2>
+        <div class="box">
+            slope = {round(slope, 8)}<br>
+            intercept = {round(intercept, 5)}<br>
+            stdDev = {round(stdDev, 8)}<br>
+            КАНАЛ: <b>{lower} / {center} / {upper}</b>
+        </div>
+        <br>
+        <table>
+            <thead><tr><th>Время (Киев)</th><th>Open</th><th>High</th><th>Low</th><th>Close</th><th>reg_line</th></tr></thead>
+            <tbody>{rows_html}</tbody>
+        </table>
+    </body>
+    </html>
+    """
 # Запуск сервера + инициализация
 if __name__ == "__main__":
     init_db()
