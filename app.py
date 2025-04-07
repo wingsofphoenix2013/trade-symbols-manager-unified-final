@@ -330,7 +330,7 @@ def fetch_kline_stream():
                 time.sleep(5)
 
     threading.Thread(target=run, daemon=True).start()
-# === МОДУЛЬ 7: Debug по формуле Pine Script (TV-совпадение) ===
+# === МОДУЛЬ 7: Debug — правильный порядок свечей (TV-style) ===
 
 @app.route("/debug/<symbol>")
 def debug_channel(symbol):
@@ -367,7 +367,7 @@ def debug_channel(symbol):
     candles = []
     for ts in sorted(grouped.keys()):
         bucket = grouped[ts]
-        if len(bucket) == 0:
+        if not bucket:
             continue
         o = bucket[0][0]
         h = max(x[1] for x in bucket)
@@ -378,13 +378,13 @@ def debug_channel(symbol):
     if len(candles) < length:
         return "<h3>Недостаточно данных</h3>"
 
-    closes = [c[1]["close"] for c in candles[-length:]]
+    # обратный порядок цен (0 — последняя свеча, len-1 — самая старая)
+    closes = [c[1]["close"] for c in candles[-length:]][::-1]
 
-    # 1. Расчет mid (среднее всех цен)
+    # расчёт mid
     mid = sum(closes) / length
 
-    # 2. Расчет наклона (slope)
-    # аналог linreg(x, len, 0) - linreg(x, len, 1)
+    # расчёт slope (аналог TV)
     x = list(range(1, length + 1))
     sumX = sum(x)
     sumY = sum(closes)
@@ -392,17 +392,17 @@ def debug_channel(symbol):
     sumX2 = sum(j ** 2 for j in x)
     slope = (length * sumXY - sumX * sumY) / (length * sumX2 - sumX ** 2)
 
-    # 3. Intercept по формуле TradingView
+    # intercept
     intercept = mid - slope * (length // 2) + ((1 - (length % 2)) / 2) * slope
 
-    # 4. Расчет stdDev в стиле Pine Script
+    # stdDev (по TV)
     dev = 0.0
     for i in range(length):
         expected = slope * (length - i) + intercept
         dev += (closes[i] - expected) ** 2
     stdDev = sqrt(dev / length)
 
-    # 5. Построение границ канала
+    # канал
     endy = intercept + slope * (length - 1)
     center = (intercept + endy) / 2
     upper = center + deviation * stdDev
