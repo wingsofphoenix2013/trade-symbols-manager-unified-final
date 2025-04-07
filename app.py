@@ -510,6 +510,115 @@ def latest_prices():
     </html>
     """
     return html
+# === МОДУЛЬ 10: API для текущего состояния канала (в реальном времени) ===
+
+@app.route("/api/live-channel/<symbol>")
+def api_live_channel(symbol):
+    from collections import defaultdict
+    from math import atan, degrees
+
+    symbol = symbol.lower()
+    interval_minutes = 5
+    now = datetime.utcnow()
+    start_minute = now.minute - now.minute % interval_minutes
+    current_start = now.replace(minute=start_minute, second=0, microsecond=0)
+
+    try:
+        config = load_channel_config()
+        length = config.get("length", 50)
+        deviation = config.get("deviation", 2.0)
+
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute("SELECT timestamp, open, high, low, close FROM prices WHERE symbol = ? ORDER BY timestamp ASC", (symbol,))
+        rows = c.fetchall()
+
+        c.execute("SELECT timestamp, action FROM signals WHERE symbol = ?", (symbol.upper(),))
+        signals = [(datetime.fromisoformat(row[0]), row[1].upper()) for row in c.fetchall()]
+        conn.close()
+    except Exception as e:
+        return jsonify({"error": f"Ошибка БД: {str(e)}"})
+
+    # Агрегируем 5-минутные свечи
+    grouped = defaultdict(list)
+    for ts_str, o, h, l, c_ in rows:
+        try:
+            ts = datetime.fromisoformat(ts_str)
+        except:
+            continue
+        minute = (ts.minute // interval_minutes) * interval_minutes
+        key = ts.replace(minute=minute, second=0, microsecond=0)
+        grouped[key].append((float(o), float(h), float(l), float(c_)))
+
+    candles = []
+    for ts in sorted(grouped.keys()):
+        bucket = grouped[ts]
+        if not bucket:
+            continue
+        o = bucket[0][0]
+        h = max(x[1] for x in bucket)
+        l = min(x[2] for x in bucket)
+        c_ = bucket[-1][3]
+        candles.append((ts, {"open": o, "high": h, "low": l, "close": c_}))
+
+    if len(candles) < length - 1:
+        return jsonify({"error": "Недостаточно исторических данных"})
+
+    closes = [c[1]["close"] for c in candles[-(length - 1):]]
+    open_price = candles[-1][1]["open"]
+
+    current_price = latest_price.get(symbol)
+    if not current_price:
+        return jsonify({"error": "Нет текущей цены"})
+
+    closes.append(current_price)
+
+    x = list(range(1, length + 1))
+    sumX = sum(x)
+    sumY = sum(closes)
+    sumXY = sum(closes[j] * x[j] for j in range(length))
+    sumX2 = sum(x[j] ** 2 for j in range(length))
+    slope = (length * sumXY - sumX * sumY) / (length * sumX2 - sumX ** 2)
+    intercept = (sumY / length) - slope * ((length - 1) / 2)
+    line = [intercept + slope * (length - j - 1) for j in range(length)]
+    center = sum(line) / length
+    stdDev = (sum((closes[j] - line[j]) ** 2 for j in range(length)) / (length - 1)) ** 0.5
+
+    lower = center - deviation * stdDev
+    upper = center + deviation * stdDev
+    width_percent = round((upper - lower) / center * 100, 2)
+
+    angle_deg = round(degrees(atan(slope)), 2)
+
+    if angle_deg > 3:
+        direction = "восходящий ↗️"
+        color = "green"
+    elif angle_deg < -3:
+        direction = "нисходящий ↘️"
+        color = "red"
+    else:
+        direction = "флет →"
+        color = "black"
+
+    signal = ""
+    for st, act in signals:
+        if current_start <= st < current_start + timedelta(minutes=interval_minutes):
+            signal = act
+            break
+
+    local_time = now.replace(tzinfo=timezone.utc).astimezone(ZoneInfo("Europe/Kyiv"))
+
+    return jsonify({
+        "time": now.strftime("%Y-%m-%d %H:%M:%S"),                   # UTC
+        "local_time": local_time.strftime("%Y-%m-%d %H:%M:%S"),       # Europe/Kyiv
+        "open_price": open_price,
+        "current_price": current_price,
+        "direction": direction,
+        "direction_color": color,
+        "angle": angle_deg,
+        "width_percent": width_percent,
+        "signal": signal
+    })
 # Запуск сервера + инициализация
 if __name__ == "__main__":
     init_db()
