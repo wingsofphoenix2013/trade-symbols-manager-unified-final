@@ -144,20 +144,6 @@
   }
 
   function checkNewCandle() {
-  fetch(`/api/candles/${symbolName}?interval=5m`)
-    .then(res => res.json())
-    .then(data => {
-      if (!data.length) return;
-
-      const latest = data[data.length - 1].time;
-      if (latest !== lastCandleTime) {
-        lastCandleTime = latest;
-        offset = 0;
-        document.getElementById("history-body").innerHTML = "";
-        loadHistorical();
-      }
-    }).catch(e => console.error("Ошибка проверки новой свечи", e));
-
     const now = new Date();
     const minutes = now.getMinutes();
     const rounded = Math.floor(minutes / 5) * 5;
