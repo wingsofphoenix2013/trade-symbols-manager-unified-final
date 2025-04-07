@@ -194,8 +194,8 @@ def api_candles(symbol):
             seconds=now.second,
             microseconds=now.microsecond
         )
-        # Исключаем ещё не завершённую текущую свечу
-        candles_raw = [row for row in candles_raw if row[0] < latest_allowed]
+        # Исключаем текущую незавершённую свечу
+        candles_raw = [row for row in candles_raw if row[0] <= latest_allowed - timedelta(minutes=5)]
 
     else:
         for ts, o, h, l, c_ in prices_map:
