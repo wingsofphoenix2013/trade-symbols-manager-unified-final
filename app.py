@@ -334,6 +334,9 @@ def fetch_kline_stream():
 
 @app.route("/debug/<symbol>")
 def debug_channel(symbol):
+    from collections import defaultdict
+    from math import atan, degrees
+
     interval = request.args.get("interval", "5m")
     include_current = request.args.get("include_current", "false").lower() == "true"
     if interval != "5m":
@@ -352,8 +355,6 @@ def debug_channel(symbol):
     except Exception as e:
         return f"<h3>DB error: {e}</h3>"
 
-    from collections import defaultdict
-
     grouped = defaultdict(list)
     for ts_str, o, h, l, c_ in rows:
         try:
@@ -367,7 +368,7 @@ def debug_channel(symbol):
     candles = []
     for ts in sorted(grouped.keys()):
         bucket = grouped[ts]
-        if not bucket:
+        if len(bucket) == 0:
             continue
         o = bucket[0][0]
         h = max(x[1] for x in bucket)
@@ -379,12 +380,10 @@ def debug_channel(symbol):
         return "<h3>Недостаточно данных</h3>"
 
     closes = [c[1]["close"] for c in candles[-(length - (1 if include_current else 0)):]]
-
     if include_current:
         price = latest_price.get(symbol.lower())
         if price:
             closes.append(price)
-
     if len(closes) != length:
         return "<h3>Не удалось получить текущую цену</h3>"
 
@@ -394,15 +393,16 @@ def debug_channel(symbol):
     sumXY = sum(closes[j] * x[j] for j in range(length))
     sumX2 = sum(x[j] ** 2 for j in range(length))
     slope = (length * sumXY - sumX * sumY) / (length * sumX2 - sumX ** 2)
-    average = sumY / length
-    mid_index = (length - 1) / 2
-    intercept = average - slope * mid_index
+    intercept = (sumY / length) - slope * ((length - 1) / 2)
     line = [intercept + slope * (length - j - 1) for j in range(length)]
     center = sum(line) / length
     stdDev = (sum((closes[j] - line[j]) ** 2 for j in range(length)) / (length - 1)) ** 0.5
+
     lower = round(center - deviation * stdDev, 5)
     center = round(center, 5)
     upper = round(center + deviation * stdDev, 5)
+    width_percent = round((upper - lower) / center * 100, 2)
+    angle_deg = round(degrees(atan(slope)), 2)
 
     rows_html = ""
     recent_candles = candles[-(length - (1 if include_current else 0)):]
@@ -435,7 +435,9 @@ def debug_channel(symbol):
             slope = {round(slope, 8)}<br>
             intercept = {round(intercept, 5)}<br>
             stdDev = {round(stdDev, 8)}<br>
-            КАНАЛ: <b>{lower} / {center} / {upper}</b>
+            КАНАЛ: <b>{lower} / {center} / {upper}</b><br>
+            <b>Ширина канала:</b> {width_percent}%<br>
+            <b>Угол наклона:</b> {angle_deg}&deg;
         </div>
         <br>
         <table>
@@ -445,6 +447,7 @@ def debug_channel(symbol):
     </body>
     </html>
     """
+
 # === МОДУЛЬ 8: Поток Binance @trade — хранение текущих цен в latest_price ===
 
 latest_price = {}
