@@ -530,12 +530,13 @@ def latest_prices():
     </html>
     """
     return html
-# === МОДУЛЬ 10: API для текущего состояния канала (в реальном времени) ===
+# === МОДУЛЬ 10: API live-channel — расчёт по логике TV (49 свечей + latest_price) ===
 
 @app.route("/api/live-channel/<symbol>")
 def api_live_channel(symbol):
     from collections import defaultdict
-    from math import atan, degrees
+    from math import sqrt, atan, degrees
+    from datetime import datetime
 
     symbol = symbol.lower()
     interval_minutes = 5
@@ -552,14 +553,12 @@ def api_live_channel(symbol):
         c = conn.cursor()
         c.execute("SELECT timestamp, open, high, low, close FROM prices WHERE symbol = ? ORDER BY timestamp ASC", (symbol,))
         rows = c.fetchall()
-
         c.execute("SELECT timestamp, action FROM signals WHERE symbol = ?", (symbol.upper(),))
-        signals = [(datetime.fromisoformat(row[0]), row[1].upper()) for row in c.fetchall()]
+        signal_rows = [(datetime.fromisoformat(r[0]), r[1].upper()) for r in c.fetchall()]
         conn.close()
     except Exception as e:
         return jsonify({"error": f"Ошибка БД: {str(e)}"})
 
-    # Агрегируем 5-минутные свечи
     grouped = defaultdict(list)
     for ts_str, o, h, l, c_ in rows:
         try:
@@ -573,41 +572,46 @@ def api_live_channel(symbol):
     candles = []
     for ts in sorted(grouped.keys()):
         bucket = grouped[ts]
-        if not bucket:
-            continue
-        o = bucket[0][0]
-        h = max(x[1] for x in bucket)
-        l = min(x[2] for x in bucket)
-        c_ = bucket[-1][3]
-        candles.append((ts, {"open": o, "high": h, "low": l, "close": c_}))
+        if bucket:
+            o = bucket[0][0]
+            h = max(x[1] for x in bucket)
+            l = min(x[2] for x in bucket)
+            c_ = bucket[-1][3]
+            candles.append((ts, {"open": o, "high": h, "low": l, "close": c_}))
 
     if len(candles) < length - 1:
-        return jsonify({"error": "Недостаточно исторических данных"})
+        return jsonify({"error": "Недостаточно данных"})
 
     closes = [c[1]["close"] for c in candles[-(length - 1):]]
-    open_price = candles[-1][1]["open"]
-
     current_price = latest_price.get(symbol)
     if not current_price:
         return jsonify({"error": "Нет текущей цены"})
-
     closes.append(current_price)
 
-    x = list(range(1, length + 1))
-    sumX = sum(x)
-    sumY = sum(closes)
-    sumXY = sum(closes[j] * x[j] for j in range(length))
-    sumX2 = sum(x[j] ** 2 for j in range(length))
-    slope = (length * sumXY - sumX * sumY) / (length * sumX2 - sumX ** 2)
-    intercept = (sumY / length) - slope * ((length - 1) / 2)
-    line = [intercept + slope * (length - j - 1) for j in range(length)]
-    center = sum(line) / length
-    stdDev = (sum((closes[j] - line[j]) ** 2 for j in range(length)) / (length - 1)) ** 0.5
+    lows = [c[1]["low"] for c in candles[-(length - 1):]]
+    highs = [c[1]["high"] for c in candles[-(length - 1):]]
+    open_price = candles[-1][1]["open"]
 
-    lower = center - deviation * stdDev
+    x = list(range(length))
+    avgX = sum(x) / length
+    mid = sum(closes) / length
+    covXY = sum((x[i] - avgX) * (closes[i] - mid) for i in range(length))
+    varX = sum((x[i] - avgX) ** 2 for i in range(length))
+    slope = covXY / varX
+    intercept = mid - slope * avgX
+
+    dev = 0.0
+    for i in range(length):
+        expected = slope * i + intercept
+        dev += (closes[i] - expected) ** 2
+    stdDev = sqrt(dev / length)
+
+    y_start = intercept
+    y_end = intercept + slope * (length - 1)
+    center = (y_start + y_end) / 2
     upper = center + deviation * stdDev
+    lower = center - deviation * stdDev
     width_percent = round((upper - lower) / center * 100, 2)
-
     angle_deg = round(degrees(atan(slope)), 2)
 
     if angle_deg > 2:
@@ -621,7 +625,7 @@ def api_live_channel(symbol):
         color = "black"
 
     signal = ""
-    for st, act in signals:
+    for st, act in signal_rows:
         if current_start <= st < current_start + timedelta(minutes=interval_minutes):
             signal = act
             break
@@ -629,10 +633,10 @@ def api_live_channel(symbol):
     local_time = now.replace(tzinfo=timezone.utc).astimezone(ZoneInfo("Europe/Kyiv"))
 
     return jsonify({
-        "time": now.strftime("%Y-%m-%d %H:%M:%S"),                   # UTC
-        "local_time": local_time.strftime("%Y-%m-%d %H:%M:%S"),       # Europe/Kyiv
-        "open_price": open_price,
-        "current_price": current_price,
+        "time": now.strftime("%Y-%m-%d %H:%M:%S"),
+        "local_time": local_time.strftime("%Y-%m-%d %H:%M:%S"),
+        "open_price": round(open_price, 5),
+        "current_price": round(current_price, 5),
         "direction": direction,
         "direction_color": color,
         "angle": angle_deg,
