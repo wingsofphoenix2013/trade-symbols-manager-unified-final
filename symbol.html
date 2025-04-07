@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <title>Просмотр пары</title>
+  <style>
+    body { font-family: sans-serif; margin: 20px; background: #f9f9f9; }
+    table { width: 100%; border-collapse: collapse; margin-bottom: 20px; background: white; }
+    th, td { padding: 6px; border: 1px solid #ccc; text-align: right; }
+    th { background: #eee; }
+    .green { color: green; }
+    .red { color: red; }
+    .zone-buy { background-color: #e0ffe0; }
+    .zone-sell { background-color: #ffe0e0; }
+    .btn { display: inline-block; margin-bottom: 20px; padding: 8px 12px; background: #007bff; color: white; text-decoration: none; border-radius: 4px; }
+  </style>
+</head>
+<body>
+<a href="/" class="btn">← Назад</a>
+<h2 id="symbol-title">Символ</h2>
+
+<h3>Текущая 5-минутная свеча</h3>
+<table id="live-candle">
+  <thead>
+    <tr>
+      <th>Время</th>
+      <th>Цена открытия</th>
+      <th>Текущая цена</th>
+      <th>Канал</th>
+      <th>Сигнал</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr id="live-row">
+      <td id="lc-time">--</td>
+      <td id="lc-open">--</td>
+      <td id="lc-current">--</td>
+      <td id="lc-channel">--</td>
+      <td id="lc-signal">--</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3>История свечей</h3>
+<table id="history-table">
+  <thead>
+    <tr>
+      <th>Время</th>
+      <th>Open</th>
+      <th>High</th>
+      <th>Low</th>
+      <th>Close</th>
+      <th>Канал</th>
+      <th>Сигнал</th>
+    </tr>
+  </thead>
+  <tbody id="history-body"></tbody>
+</table>
+<button onclick="loadMore()" id="load-more-btn">Загрузить ещё</button>
+
+<script>
+  const symbolName = window.location.pathname.split("/").pop();
+  let lastCandleTime = null;
+  let offset = 0;
+  const limit = 20;
+
+  document.getElementById("symbol-title").textContent = `Просмотр пары: ${symbolName}`;
+
+  async function updateLiveChannel(symbol) {
+    try {
+      const res = await fetch(`/api/live-channel/${symbol}`);
+      const data = await res.json();
+      if (data.error) return;
+
+      document.getElementById("lc-time").textContent = data.local_time;
+      document.getElementById("lc-open").textContent = data.open_price.toFixed(5);
+
+      const curEl = document.getElementById("lc-current");
+      curEl.textContent = data.current_price.toFixed(5);
+      curEl.className = data.current_price > data.open_price ? "green" :
+                        data.current_price < data.open_price ? "red" : "";
+
+      const ch = document.getElementById("lc-channel");
+      ch.textContent = `${data.direction} | ${data.width_percent}%`;
+      ch.style.color = data.direction_color;
+
+      const sig = document.getElementById("lc-signal");
+      sig.textContent = data.signal || "--";
+      sig.className = "";
+      if (data.signal?.includes("BUYZONE")) sig.classList.add("zone-buy");
+      if (data.signal?.includes("SELLZONE")) sig.classList.add("zone-sell");
+      if (data.signal?.includes("BUYORDER")) sig.classList.add("green");
+      if (data.signal?.includes("SELLORDER")) sig.classList.add("red");
+    } catch (e) {
+      console.error("Ошибка live channel", e);
+    }
+  }
+
+  async function loadHistorical() {
+    try {
+      const res = await fetch(`/api/candles/${symbolName}?interval=5m`);
+      const data = await res.json();
+      const body = document.getElementById("history-body");
+      const slice = data.slice(-offset - limit, -offset || undefined).reverse();
+      slice.forEach(row => {
+        const tr = document.createElement("tr");
+        const signalClass = getSignalClass(row.signal);
+        tr.innerHTML = `
+          <td>${row.time}</td>
+          <td>${row.open}</td>
+          <td>${row.high}</td>
+          <td>${row.low}</td>
+          <td>${row.close}</td>
+          <td>${row.channel}</td>
+          <td class="${signalClass}">${row.signal || "--"}</td>
+        `;
+        body.appendChild(tr);
+      });
+      if (data.length > offset + limit) {
+        document.getElementById("load-more-btn").style.display = "block";
+      } else {
+        document.getElementById("load-more-btn").style.display = "none";
+      }
+      if (data.length > 0 && offset === 0) {
+        lastCandleTime = data[data.length - 1].time;
+      }
+    } catch (e) {
+      console.error("Ошибка загрузки истории", e);
+    }
+  }
+
+  function getSignalClass(signal) {
+    if (!signal) return "";
+    if (signal.includes("BUYZONE")) return "zone-buy";
+    if (signal.includes("SELLZONE")) return "zone-sell";
+    if (signal.includes("BUYORDER")) return "green";
+    if (signal.includes("SELLORDER")) return "red";
+    return "";
+  }
+
+  function loadMore() {
+    offset += limit;
+    loadHistorical();
+  }
+
+  
+function checkNewCandle() {
+  const now = new Date();
+  const min = now.getMinutes();
+  const sec = now.getSeconds();
+
+  // Проверка выполняется только на 1-й минуте пятиминутки (01, 06, 11 и т.д.), чтобы дождаться появления свечи в базе
+  if (min % 5 === 1 && sec < 5) {
+    fetch(`/api/candles/${symbolName}?interval=5m`)
+      .then(res => res.json())
+      .then(data => {
+        if (!data.length) return;
+
+        const latest = data[data.length - 1].time;
+        if (latest !== lastCandleTime) {
+          lastCandleTime = latest;
+          offset = 0;
+          document.getElementById("history-body").innerHTML = "";
+          loadHistorical();
+        }
+      }).catch(e => console.error("Ошибка проверки новой свечи", e));
+  }
+}
+  }
+
+  setInterval(() => updateLiveChannel(symbolName), 1000);
+  setInterval(() => checkNewCandle(), 5000);
+  loadHistorical();
+</script>
+</body>
+</html>
