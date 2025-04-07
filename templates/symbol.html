@@ -16,6 +16,7 @@
   </style>
 </head>
 <body>
+<!-- refreshed at 2025-04-08 -->
 <a href="/" class="btn">← Назад</a>
 <h2 id="symbol-title">Символ</h2>
 
@@ -100,14 +101,14 @@
       slice.forEach(row => {
         const tr = document.createElement("tr");
         tr.innerHTML = `<tr>
-          <td>${row.time}</td>
-          <td>${row.open}</td>
-          <td>${row.high}</td>
-          <td>${row.low}</td>
-          <td>${row.close}</td>
-          <td>${row.channel}</td>
-          <td>${row.signal || "--"}</td>
-        </tr>`;
+      <td>${row.time}</td>
+      <td>${row.open}</td>
+      <td>${row.high}</td>
+      <td>${row.low}</td>
+      <td>${row.close}</td>
+      <td>${row.channel}</td>
+      <td>${row.signal || "--"}</td>
+    </tr>`;
         body.appendChild(tr);
       });
       if (data.length > offset + limit) {
