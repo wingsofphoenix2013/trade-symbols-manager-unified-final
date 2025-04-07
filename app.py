@@ -335,6 +335,7 @@ def fetch_kline_stream():
 @app.route("/debug/<symbol>")
 def debug_channel(symbol):
     interval = request.args.get("interval", "5m")
+    include_current = request.args.get("include_current", "false").lower() == "true"
     if interval != "5m":
         return "<h3>Поддерживается только interval=5m</h3>"
 
@@ -366,7 +367,7 @@ def debug_channel(symbol):
     candles = []
     for ts in sorted(grouped.keys()):
         bucket = grouped[ts]
-        if len(bucket) == 0:
+        if not bucket:
             continue
         o = bucket[0][0]
         h = max(x[1] for x in bucket)
@@ -374,11 +375,19 @@ def debug_channel(symbol):
         c_ = bucket[-1][3]
         candles.append((ts, {"open": o, "high": h, "low": l, "close": c_}))
 
-    candles = candles[-length:]
-    if len(candles) < length:
-        return "<h3>Недостаточно данных для расчёта канала</h3>"
+    if len(candles) < length - (1 if include_current else 0):
+        return "<h3>Недостаточно данных</h3>"
 
-    closes = [c[1]["close"] for c in candles]
+    closes = [c[1]["close"] for c in candles[-(length - (1 if include_current else 0)):]]
+
+    if include_current:
+        price = latest_price.get(symbol.lower())
+        if price:
+            closes.append(price)
+
+    if len(closes) != length:
+        return "<h3>Не удалось получить текущую цену</h3>"
+
     x = list(range(1, length + 1))
     sumX = sum(x)
     sumY = sum(closes)
@@ -390,22 +399,23 @@ def debug_channel(symbol):
     intercept = average - slope * mid_index
     line = [intercept + slope * (length - j - 1) for j in range(length)]
     center = sum(line) / length
-
-    # КЛЮЧЕВАЯ СТРОКА — исправлен делитель на (length - 1)
     stdDev = (sum((closes[j] - line[j]) ** 2 for j in range(length)) / (length - 1)) ** 0.5
-
     lower = round(center - deviation * stdDev, 5)
     center = round(center, 5)
     upper = round(center + deviation * stdDev, 5)
 
     rows_html = ""
-    for i in range(length):
-        ts = candles[i][0].astimezone(ZoneInfo("Europe/Kyiv")).strftime("%Y-%m-%d %H:%M")
-        o = candles[i][1]["open"]
-        h = candles[i][1]["high"]
-        l = candles[i][1]["low"]
-        c_ = candles[i][1]["close"]
+    recent_candles = candles[-(length - (1 if include_current else 0)):]
+    for i in range(len(recent_candles)):
+        ts = recent_candles[i][0].astimezone(ZoneInfo("Europe/Kyiv")).strftime("%Y-%m-%d %H:%M")
+        o = recent_candles[i][1]["open"]
+        h = recent_candles[i][1]["high"]
+        l = recent_candles[i][1]["low"]
+        c_ = recent_candles[i][1]["close"]
         rows_html += f"<tr><td>{ts}</td><td>{o}</td><td>{h}</td><td>{l}</td><td>{c_}</td><td>{round(line[i],5)}</td></tr>"
+
+    if include_current and len(line) == length:
+        rows_html += f"<tr><td><i>Current</i></td><td colspan='4'>Текущая цена: {closes[-1]}</td><td>{round(line[-1],5)}</td></tr>"
 
     return f"""
     <html>
@@ -420,7 +430,7 @@ def debug_channel(symbol):
         </style>
     </head>
     <body>
-        <h2>DEBUG: {symbol.upper()} ({interval})</h2>
+        <h2>DEBUG: {symbol.upper()} ({interval}){" + текущая цена" if include_current else ""}</h2>
         <div class="box">
             slope = {round(slope, 8)}<br>
             intercept = {round(intercept, 5)}<br>
@@ -435,6 +445,44 @@ def debug_channel(symbol):
     </body>
     </html>
     """
+# === МОДУЛЬ 8: Поток Binance @trade — хранение текущих цен в latest_price ===
+
+latest_price = {}
+
+def fetch_trade_stream():
+    def on_message(ws, msg):
+        try:
+            data = json.loads(msg)
+            trade = data['data']
+            symbol = trade['s'].lower()
+            price = float(trade['p'])
+            latest_price[symbol] = price
+        except Exception as e:
+            print("Ошибка обработки trade-сообщения:", e)
+
+    def run():
+        while True:
+            try:
+                conn = sqlite3.connect(DB_PATH)
+                c = conn.cursor()
+                c.execute("SELECT name FROM symbols")
+                symbols = [row[0].lower() for row in c.fetchall()]
+                conn.close()
+                if not symbols:
+                    print("⚠️ Нет пар для подписки на @trade")
+                    time.sleep(5)
+                    continue
+                streams = [f"{s}@trade" for s in symbols]
+                url = "wss://fstream.binance.com/stream?streams=" + "/".join(streams)
+                print("🔁 Подписка на @trade:", streams)
+                sys.stdout.flush()
+                ws = websocket.WebSocketApp(url, on_message=on_message)
+                ws.run_forever()
+            except Exception as e:
+                print("❌ Ошибка WebSocket (@trade):", e)
+                time.sleep(5)
+
+    threading.Thread(target=run, daemon=True).start()
 # Запуск сервера + инициализация
 if __name__ == "__main__":
     init_db()
