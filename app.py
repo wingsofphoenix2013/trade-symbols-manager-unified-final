@@ -137,9 +137,9 @@ def webhook():
         print("Webhook error:", e)
         sys.stdout.flush()
     return jsonify({"status": "ignored"}), 400
+
 # === МОДУЛЬ 5: API свечей + сигнал + расчёт канала на каждую свечу ===
 
-@app.route("/api/candles/<symbol>")
 def api_candles(symbol):
     interval = request.args.get("interval", "1m")
     if interval not in ["1m", "5m"]:
@@ -187,6 +187,16 @@ def api_candles(symbol):
             l = min(x[2] for x in bucket)
             c_ = bucket[-1][3]
             candles_raw.append((ts, o, h, l, c_))
+
+        now = datetime.utcnow()
+        latest_allowed = now - timedelta(
+            minutes=now.minute % 5,
+            seconds=now.second,
+            microseconds=now.microsecond
+        )
+        # Исключаем ещё не завершённую текущую свечу
+        candles_raw = [row for row in candles_raw if row[0] < latest_allowed]
+
     else:
         for ts, o, h, l, c_ in prices_map:
             ts_clean = ts.replace(second=0, microsecond=0)
@@ -223,49 +233,39 @@ def api_candles(symbol):
 
         # расчёт канала
         window = candles_raw[max(0, i - length + 1): i + 1]
-        if len(window) == length:
-            closes = [w[4] for w in window]
-            x = list(range(1, length + 1))
-            sumX = sum(x)
-            sumY = sum(closes)
-            sumXY = sum(closes[j] * x[j] for j in range(length))
-            sumX2 = sum(x[j] ** 2 for j in range(length))
-            slope = (length * sumXY - sumX * sumY) / (length * sumX2 - sumX ** 2)
-            average = sumY / length
-            mid_index = (length - 1) / 2
-            intercept = average - slope * mid_index
-            line = [intercept + slope * (length - j - 1) for j in range(length)]
-            stdDev = (sum((closes[j] - line[j]) ** 2 for j in range(length)) / length) ** 0.5
-            center = intercept
-            lower = round(center - deviation * stdDev, 5)
-            center = round(center, 5)
-            upper = round(center + deviation * stdDev, 5)
-        else:
-            lower = center = upper = ""
+        if not window:
+            continue
+        avg_x = sum(range(len(window))) / len(window)
+        avg_y = sum([row[4] for row in window]) / len(window)
+        cov_xy = sum([(i - avg_x) * (row[4] - avg_y) for i, row in enumerate(window)])
+        var_x = sum([(i - avg_x) ** 2 for i in range(len(window))])
+        slope = cov_xy / var_x if var_x else 0
+        intercept = avg_y - slope * avg_x
+
+        expected = [intercept + slope * i for i in range(len(window))]
+        std = (sum([(window[i][4] - expected[i]) ** 2 for i in range(len(window))]) / len(window)) ** 0.5
+        upper = expected[-1] + deviation * std
+        lower = expected[-1] - deviation * std
+        mid = expected[-1]
+
+        width_percent = round((upper - lower) / mid * 100, 2) if mid else 0
+        angle_rad = math.atan(slope)
+        angle_deg = round(math.degrees(angle_rad), 1)
+
+        direction = "вверх" if angle_deg > 2 else "вниз" if angle_deg < -2 else "флет"
 
         group[key] = {
-            "open": o, "high": h, "low": l, "close": c_,
-            "signal_text": signal_text,
-            "signal_type": signal_type,
-            "lower": lower, "center": center, "upper": upper
+            "time": key.strftime("%Y-%m-%d %H:%M"),
+            "open": o,
+            "high": h,
+            "low": l,
+            "close": c_,
+            "signal": signal_text or signal_type,
+            "channel": f"{lower:.5f} / {mid:.5f} / {upper:.5f}",
         }
 
-    candles = []
-    for k in sorted(group.keys()):
-        local_time = k.replace(tzinfo=timezone.utc).astimezone(ZoneInfo("Europe/Kyiv"))
-        c = group[k]
-        candles.append({
-            "time": local_time.strftime("%Y-%m-%d %H:%M"),
-            "open": c["open"],
-            "high": c["high"],
-            "low": c["low"],
-            "close": c["close"],
-            "signal": c["signal_text"],
-            "signal_type": c["signal_type"],
-            "channel": f"{c['lower']} / {c['center']} / {c['upper']}" if c["lower"] != "" else ""
-        })
-
-    return jsonify(candles or [])
+    result = list(reversed(list(group.values())))
+    return jsonify(result)
 
 # === МОДУЛЬ 6: Инициализация БД и поток Binance WebSocket ===
 
