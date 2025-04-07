@@ -389,8 +389,11 @@ def debug_channel(symbol):
     mid_index = (length - 1) / 2
     intercept = average - slope * mid_index
     line = [intercept + slope * (length - j - 1) for j in range(length)]
-    center = sum(line) / length  # ключевое исправление
-    stdDev = (sum((closes[j] - line[j]) ** 2 for j in range(length)) / length) ** 0.5
+    center = sum(line) / length
+
+    # КЛЮЧЕВАЯ СТРОКА — исправлен делитель на (length - 1)
+    stdDev = (sum((closes[j] - line[j]) ** 2 for j in range(length)) / (length - 1)) ** 0.5
+
     lower = round(center - deviation * stdDev, 5)
     center = round(center, 5)
     upper = round(center + deviation * stdDev, 5)
