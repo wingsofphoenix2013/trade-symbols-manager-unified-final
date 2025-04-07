@@ -483,6 +483,33 @@ def fetch_trade_stream():
                 time.sleep(5)
 
     threading.Thread(target=run, daemon=True).start()
+# === МОДУЛЬ 9: Просмотр текущих цен из latest_price ===
+
+@app.route("/latest-prices")
+def latest_prices():
+    rows = []
+    for symbol, price in sorted(latest_price.items()):
+        rows.append(f"<tr><td>{symbol.upper()}</td><td>{price}</td></tr>")
+    html = f"""
+    <html>
+    <head>
+        <title>Текущие цены из потока @trade</title>
+        <style>
+            table {{ font-family: sans-serif; border-collapse: collapse; width: 400px; }}
+            th, td {{ border: 1px solid #aaa; padding: 6px; text-align: right; }}
+            th {{ background-color: #eee; }}
+        </style>
+    </head>
+    <body>
+        <h2>Текущие цены (из latest_price)</h2>
+        <table>
+            <thead><tr><th>Символ</th><th>Цена</th></tr></thead>
+            <tbody>{"".join(rows) if rows else "<tr><td colspan='2'>Нет данных</td></tr>"}</tbody>
+        </table>
+    </body>
+    </html>
+    """
+    return html
 # Запуск сервера + инициализация
 if __name__ == "__main__":
     init_db()
