@@ -330,7 +330,7 @@ def fetch_kline_stream():
                 time.sleep(5)
 
     threading.Thread(target=run, daemon=True).start()
-# === МОДУЛЬ 7: Отладочная страница для анализа канала ===
+# === МОДУЛЬ 7: Debug без текущей цены (по 50 закрытым свечам) ===
 
 @app.route("/debug/<symbol>")
 def debug_channel(symbol):
@@ -338,7 +338,6 @@ def debug_channel(symbol):
     from math import atan, degrees
 
     interval = request.args.get("interval", "5m")
-    include_current = request.args.get("include_current", "false").lower() == "true"
     if interval != "5m":
         return "<h3>Поддерживается только interval=5m</h3>"
 
@@ -353,7 +352,7 @@ def debug_channel(symbol):
         rows = c.fetchall()
         conn.close()
     except Exception as e:
-        return f"<h3>DB error: {e}</h3>"
+        return f"<h3>Ошибка БД: {e}</h3>"
 
     grouped = defaultdict(list)
     for ts_str, o, h, l, c_ in rows:
@@ -368,7 +367,7 @@ def debug_channel(symbol):
     candles = []
     for ts in sorted(grouped.keys()):
         bucket = grouped[ts]
-        if len(bucket) == 0:
+        if not bucket:
             continue
         o = bucket[0][0]
         h = max(x[1] for x in bucket)
@@ -376,37 +375,21 @@ def debug_channel(symbol):
         c_ = bucket[-1][3]
         candles.append((ts, {"open": o, "high": h, "low": l, "close": c_}))
 
-    if len(candles) < length - 1:
-        return "<h3>Недостаточно исторических данных</h3>"
+    if len(candles) < length:
+        return "<h3>Недостаточно данных</h3>"
 
-    # последние 49 закрытых
-    closes = [c[1]["close"] for c in candles[-(length - 1):]]
+    closes = [c[1]["close"] for c in candles[-length:]]
 
-    # получаем текущую цену
-    price = latest_price.get(symbol.lower())
-    if include_current and price:
-        closes_for_line = closes + [price]
-    else:
-        closes_for_line = closes
-
-    if len(closes_for_line) != length:
-        return "<h3>Недостаточно данных для линии</h3>"
-
-    # рассчитываем slope/line с текущей ценой
     x = list(range(1, length + 1))
     sumX = sum(x)
-    sumY = sum(closes_for_line)
-    sumXY = sum(closes_for_line[j] * x[j] for j in range(length))
+    sumY = sum(closes)
+    sumXY = sum(closes[j] * x[j] for j in range(length))
     sumX2 = sum(x[j] ** 2 for j in range(length))
     slope = (length * sumXY - sumX * sumY) / (length * sumX2 - sumX ** 2)
     intercept = (sumY / length) - slope * ((length - 1) / 2)
     line = [intercept + slope * (length - j - 1) for j in range(length)]
-
     center = sum(line) / length
-
-    # stdDev считаем только по 49 закрытым свечам
-    line_for_std = line[:length - 1]
-    stdDev = (sum((closes[j] - line_for_std[j]) ** 2 for j in range(length - 1)) / (length - 2)) ** 0.5
+    stdDev = (sum((closes[j] - line[j]) ** 2 for j in range(length)) / (length - 1)) ** 0.5
 
     lower = round(center - deviation * stdDev, 5)
     center = round(center, 5)
@@ -415,17 +398,14 @@ def debug_channel(symbol):
     angle_deg = round(degrees(atan(slope)), 2)
 
     rows_html = ""
-    recent_candles = candles[-(length - 1):]
-    for i in range(len(recent_candles)):
+    recent_candles = candles[-length:]
+    for i in range(length):
         ts = recent_candles[i][0].astimezone(ZoneInfo("Europe/Kyiv")).strftime("%Y-%m-%d %H:%M")
         o = recent_candles[i][1]["open"]
         h = recent_candles[i][1]["high"]
         l = recent_candles[i][1]["low"]
         c_ = recent_candles[i][1]["close"]
         rows_html += f"<tr><td>{ts}</td><td>{o}</td><td>{h}</td><td>{l}</td><td>{c_}</td><td>{round(line[i],5)}</td></tr>"
-
-    if include_current and price:
-        rows_html += f"<tr><td><i>Current</i></td><td colspan='4'>Текущая цена: {price}</td><td>{round(line[-1],5)}</td></tr>"
 
     return f"""
     <html>
@@ -440,7 +420,7 @@ def debug_channel(symbol):
         </style>
     </head>
     <body>
-        <h2>DEBUG: {symbol.upper()} ({interval}){" + текущая цена" if include_current else ""}</h2>
+        <h2>DEBUG: {symbol.upper()} ({interval})</h2>
         <div class="box">
             slope = {round(slope, 8)}<br>
             intercept = {round(intercept, 5)}<br>
@@ -457,8 +437,8 @@ def debug_channel(symbol):
     </body>
     </html>
     """
-# === МОДУЛЬ 8: Поток Binance @trade — хранение текущих цен в latest_price ===
 
+# === МОДУЛЬ 8: Поток Binance @trade — хранение текущих цен в latest_price ===
 latest_price = {}
 
 def fetch_trade_stream():
