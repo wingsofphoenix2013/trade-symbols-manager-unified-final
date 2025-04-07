@@ -198,12 +198,11 @@ def api_candles(symbol):
             elif zones and orders:
                 signal_text = orders[0][1] + " (-)"
                 signal_type = zones[-1][1]
-
-        # === Расчёт канала (в точности как в TradingView) ===
+        # === Расчёт канала (совпадает с TradingView) ===
         window = prices_map[max(0, i - length + 1): i + 1]
         if len(window) == length:
             closes = [w[4] for w in window]
-            x = list(range(1, length + 1))  # X: [1, 2, ..., length]
+            x = list(range(1, length + 1))
             sumX = sum(x)
             sumY = sum(closes)
             sumXY = sum(closes[j] * x[j] for j in range(length))
@@ -211,44 +210,18 @@ def api_candles(symbol):
 
             slope = (length * sumXY - sumX * sumY) / (length * sumX2 - sumX ** 2)
             average = sumY / length
+            mid = (length - 1) / 2
+            intercept = average - slope * mid
 
-            # Совпадает с Pine Script: mid - slope * floor(len/2) + correction
-            middle_index = (length - 1) / 2
-            intercept = average - slope * middle_index
-
-            # Центр канала — это intercept (текущая точка линии)
             center = intercept
-            stdDev = (sum((closes[j] - (intercept + slope * (length - j - 1))) ** 2 for j in range(length)) / length) ** 0.5
+            line = [intercept + slope * (length - j - 1) for j in range(length)]
+            stdDev = (sum((closes[j] - line[j]) ** 2 for j in range(length)) / length) ** 0.5
 
             lower = round(center - deviation * stdDev, 5)
             center = round(center, 5)
             upper = round(center + deviation * stdDev, 5)
         else:
             lower = center = upper = ""
-
-        group.setdefault(key, {
-            "open": o, "high": h, "low": l, "close": c_,
-            "signal_text": signal_text,
-            "signal_type": signal_type,
-            "lower": lower, "center": center, "upper": upper
-        })
-
-    candles = []
-    for k in sorted(group.keys()):
-        local_time = k.replace(tzinfo=timezone.utc).astimezone(ZoneInfo("Europe/Kyiv"))
-        c = group[k]
-        candles.append({
-            "time": local_time.strftime("%Y-%m-%d %H:%M"),
-            "open": c["open"],
-            "high": c["high"],
-            "low": c["low"],
-            "close": c["close"],
-            "signal": c["signal_text"],
-            "signal_type": c["signal_type"],
-            "channel": f"{c['lower']} / {c['center']} / {c['upper']}" if c["lower"] != "" else ""
-        })
-
-    return jsonify(candles or [])
 # === DEBUG: Получение 50 close[] для проверки канала ===
 @app.route("/api/debug/close/<symbol>")
 def debug_close(symbol):
