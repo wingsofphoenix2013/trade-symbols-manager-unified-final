@@ -330,12 +330,12 @@ def fetch_kline_stream():
                 time.sleep(5)
 
     threading.Thread(target=run, daemon=True).start()
-# === МОДУЛЬ 7: Debug без текущей цены (по 50 закрытым свечам) ===
+# === МОДУЛЬ 7: Debug по формуле Pine Script (TV-совпадение) ===
 
 @app.route("/debug/<symbol>")
 def debug_channel(symbol):
     from collections import defaultdict
-    from math import atan, degrees
+    from math import sqrt, atan, degrees
 
     interval = request.args.get("interval", "5m")
     if interval != "5m":
@@ -361,13 +361,13 @@ def debug_channel(symbol):
         except:
             continue
         minute = (ts.minute // 5) * 5
-        ts_binance = ts.replace(minute=minute, second=0, microsecond=0)
-        grouped[ts_binance].append((float(o), float(h), float(l), float(c_)))
+        ts_bin = ts.replace(minute=minute, second=0, microsecond=0)
+        grouped[ts_bin].append((float(o), float(h), float(l), float(c_)))
 
     candles = []
     for ts in sorted(grouped.keys()):
         bucket = grouped[ts]
-        if not bucket:
+        if len(bucket) == 0:
             continue
         o = bucket[0][0]
         h = max(x[1] for x in bucket)
@@ -380,20 +380,33 @@ def debug_channel(symbol):
 
     closes = [c[1]["close"] for c in candles[-length:]]
 
+    # 1. Расчет mid (среднее всех цен)
+    mid = sum(closes) / length
+
+    # 2. Расчет наклона (slope)
+    # аналог linreg(x, len, 0) - linreg(x, len, 1)
     x = list(range(1, length + 1))
     sumX = sum(x)
     sumY = sum(closes)
     sumXY = sum(closes[j] * x[j] for j in range(length))
-    sumX2 = sum(x[j] ** 2 for j in range(length))
+    sumX2 = sum(j ** 2 for j in x)
     slope = (length * sumXY - sumX * sumY) / (length * sumX2 - sumX ** 2)
-    intercept = (sumY / length) - slope * ((length - 1) / 2)
-    line = [intercept + slope * (length - j - 1) for j in range(length)]
-    center = sum(line) / length
-    stdDev = (sum((closes[j] - line[j]) ** 2 for j in range(length)) / (length - 1)) ** 0.5
 
-    lower = round(center - deviation * stdDev, 5)
-    center = round(center, 5)
-    upper = round(center + deviation * stdDev, 5)
+    # 3. Intercept по формуле TradingView
+    intercept = mid - slope * (length // 2) + ((1 - (length % 2)) / 2) * slope
+
+    # 4. Расчет stdDev в стиле Pine Script
+    dev = 0.0
+    for i in range(length):
+        expected = slope * (length - i) + intercept
+        dev += (closes[i] - expected) ** 2
+    stdDev = sqrt(dev / length)
+
+    # 5. Построение границ канала
+    endy = intercept + slope * (length - 1)
+    center = (intercept + endy) / 2
+    upper = center + deviation * stdDev
+    lower = center - deviation * stdDev
     width_percent = round((upper - lower) / center * 100, 2)
     angle_deg = round(degrees(atan(slope)), 2)
 
@@ -405,7 +418,7 @@ def debug_channel(symbol):
         h = recent_candles[i][1]["high"]
         l = recent_candles[i][1]["low"]
         c_ = recent_candles[i][1]["close"]
-        rows_html += f"<tr><td>{ts}</td><td>{o}</td><td>{h}</td><td>{l}</td><td>{c_}</td><td>{round(line[i],5)}</td></tr>"
+        rows_html += f"<tr><td>{ts}</td><td>{o}</td><td>{h}</td><td>{l}</td><td>{c_}</td><td>—</td></tr>"
 
     return f"""
     <html>
@@ -425,7 +438,7 @@ def debug_channel(symbol):
             slope = {round(slope, 8)}<br>
             intercept = {round(intercept, 5)}<br>
             stdDev = {round(stdDev, 8)}<br>
-            КАНАЛ: <b>{lower} / {center} / {upper}</b><br>
+            КАНАЛ: <b>{round(lower,5)} / {round(center,5)} / {round(upper,5)}</b><br>
             <b>Ширина канала:</b> {width_percent}%<br>
             <b>Угол наклона:</b> {angle_deg}&deg;
         </div>
@@ -437,7 +450,6 @@ def debug_channel(symbol):
     </body>
     </html>
     """
-
 # === МОДУЛЬ 8: Поток Binance @trade — хранение текущих цен в latest_price ===
 latest_price = {}
 
