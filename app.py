@@ -330,7 +330,7 @@ def fetch_kline_stream():
                 time.sleep(5)
 
     threading.Thread(target=run, daemon=True).start()
-# === МОДУЛЬ 7: Debug — правильный порядок свечей (TV-style) ===
+# === МОДУЛЬ 7: Debug (TV-стиль + контрольные зоны + прямой порядок) ===
 
 @app.route("/debug/<symbol>")
 def debug_channel(symbol):
@@ -378,33 +378,32 @@ def debug_channel(symbol):
     if len(candles) < length:
         return "<h3>Недостаточно данных</h3>"
 
-    # обратный порядок цен (0 — последняя свеча, len-1 — самая старая)
-    closes = [c[1]["close"] for c in candles[-length:]][::-1]
+    closes = [c[1]["close"] for c in candles[-length:]]
+    lows = [c[1]["low"] for c in candles[-length:]]
+    highs = [c[1]["high"] for c in candles[-length:]]
 
-    # расчёт mid
-    mid = sum(closes) / length
+    # 1. Slope через линейную регрессию как delta линии
+    x = list(range(length))
+    avgX = sum(x) / length
+    avgY = sum(closes) / length
+    covXY = sum((x[i] - avgX) * (closes[i] - avgY) for i in range(length))
+    varX = sum((x[i] - avgX) ** 2 for i in range(length))
+    slope = covXY / varX
 
-    # расчёт slope (аналог TV)
-    x = list(range(1, length + 1))
-    sumX = sum(x)
-    sumY = sum(closes)
-    sumXY = sum(closes[j] * x[j] for j in range(length))
-    sumX2 = sum(j ** 2 for j in x)
-    slope = (length * sumXY - sumX * sumY) / (length * sumX2 - sumX ** 2)
+    # 2. Intercept по центру
+    intercept = avgY - slope * avgX
 
-    # intercept
-    intercept = mid - slope * (length // 2) + ((1 - (length % 2)) / 2) * slope
-
-    # stdDev (по TV)
+    # 3. stdDev по формуле TV (по всей линии)
     dev = 0.0
     for i in range(length):
-        expected = slope * (length - i) + intercept
+        expected = slope * i + intercept
         dev += (closes[i] - expected) ** 2
     stdDev = sqrt(dev / length)
 
-    # канал
-    endy = intercept + slope * (length - 1)
-    center = (intercept + endy) / 2
+    # 4. Канал
+    y_start = intercept
+    y_end = intercept + slope * (length - 1)
+    center = (y_start + y_end) / 2
     upper = center + deviation * stdDev
     lower = center - deviation * stdDev
     width_percent = round((upper - lower) / center * 100, 2)
@@ -419,6 +418,11 @@ def debug_channel(symbol):
         l = recent_candles[i][1]["low"]
         c_ = recent_candles[i][1]["close"]
         rows_html += f"<tr><td>{ts}</td><td>{o}</td><td>{h}</td><td>{l}</td><td>{c_}</td><td>—</td></tr>"
+
+    min_close = min(closes)
+    max_close = max(closes)
+    min_low = min(lows)
+    max_high = max(highs)
 
     return f"""
     <html>
@@ -440,7 +444,11 @@ def debug_channel(symbol):
             stdDev = {round(stdDev, 8)}<br>
             КАНАЛ: <b>{round(lower,5)} / {round(center,5)} / {round(upper,5)}</b><br>
             <b>Ширина канала:</b> {width_percent}%<br>
-            <b>Угол наклона:</b> {angle_deg}&deg;
+            <b>Угол наклона:</b> {angle_deg}&deg;<br><br>
+            <b>min(close):</b> {round(min_close,5)}<br>
+            <b>max(close):</b> {round(max_close,5)}<br>
+            <b>min(low):</b> {round(min_low,5)}<br>
+            <b>max(high):</b> {round(max_high,5)}<br>
         </div>
         <br>
         <table>
