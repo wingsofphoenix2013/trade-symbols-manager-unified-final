@@ -161,21 +161,43 @@ def api_candles(symbol):
         print("Ошибка чтения из БД:", e)
         return jsonify([])
 
-    group_minutes = 5 if interval == "5m" else 1
-    group = {}
-    prices_map = []
+    from collections import defaultdict
 
+    prices_map = []
     for ts_str, o, h, l, c_ in rows:
         try:
             ts = datetime.fromisoformat(ts_str)
-        except Exception:
+        except:
             continue
-        prices_map.append((ts, o, h, l, c_))
+        prices_map.append((ts, float(o), float(h), float(l), float(c_)))
 
-    for i in range(len(prices_map)):
-        ts, o, h, l, c_ = prices_map[i]
-        minute = ts.minute - ts.minute % group_minutes
-        key = ts.replace(minute=minute, second=0, microsecond=0)
+    candles_raw = []
+    if interval == "5m":
+        grouped = defaultdict(list)
+        for ts, o, h, l, c_ in prices_map:
+            minute = (ts.minute // 5) * 5
+            ts_bin = ts.replace(minute=minute, second=0, microsecond=0)
+            grouped[ts_bin].append((o, h, l, c_))
+        for ts in sorted(grouped.keys()):
+            bucket = grouped[ts]
+            if not bucket:
+                continue
+            o = bucket[0][0]
+            h = max(x[1] for x in bucket)
+            l = min(x[2] for x in bucket)
+            c_ = bucket[-1][3]
+            candles_raw.append((ts, o, h, l, c_))
+    else:
+        for ts, o, h, l, c_ in prices_map:
+            ts_clean = ts.replace(second=0, microsecond=0)
+            candles_raw.append((ts_clean, o, h, l, c_))
+
+    group_minutes = 5 if interval == "5m" else 1
+    group = {}
+
+    for i in range(len(candles_raw)):
+        ts, o, h, l, c_ = candles_raw[i]
+        key = ts.replace(second=0, microsecond=0)
 
         orders = []
         zones = []
@@ -199,8 +221,8 @@ def api_candles(symbol):
                 signal_text = orders[0][1] + " (-)"
                 signal_type = zones[-1][1]
 
-        # === Расчёт канала (в точности как Pine Script) ===
-        window = prices_map[max(0, i - length + 1): i + 1]
+        # расчёт канала
+        window = candles_raw[max(0, i - length + 1): i + 1]
         if len(window) == length:
             closes = [w[4] for w in window]
             x = list(range(1, length + 1))
@@ -212,21 +234,21 @@ def api_candles(symbol):
             average = sumY / length
             mid_index = (length - 1) / 2
             intercept = average - slope * mid_index
-            center = intercept
             line = [intercept + slope * (length - j - 1) for j in range(length)]
             stdDev = (sum((closes[j] - line[j]) ** 2 for j in range(length)) / length) ** 0.5
+            center = intercept
             lower = round(center - deviation * stdDev, 5)
             center = round(center, 5)
             upper = round(center + deviation * stdDev, 5)
         else:
             lower = center = upper = ""
 
-        group.setdefault(key, {
+        group[key] = {
             "open": o, "high": h, "low": l, "close": c_,
             "signal_text": signal_text,
             "signal_type": signal_type,
             "lower": lower, "center": center, "upper": upper
-        })
+        }
 
     candles = []
     for k in sorted(group.keys()):
@@ -244,6 +266,7 @@ def api_candles(symbol):
         })
 
     return jsonify(candles or [])
+
 # === МОДУЛЬ 6: Инициализация БД и поток Binance WebSocket ===
 
 # Создание таблиц, если не существуют
