@@ -198,7 +198,8 @@ def api_candles(symbol):
             elif zones and orders:
                 signal_text = orders[0][1] + " (-)"
                 signal_type = zones[-1][1]
-        # === Расчёт канала (совпадает с TradingView) ===
+
+        # === Расчёт канала (точно как в TradingView) ===
         window = prices_map[max(0, i - length + 1): i + 1]
         if len(window) == length:
             closes = [w[4] for w in window]
@@ -207,38 +208,42 @@ def api_candles(symbol):
             sumY = sum(closes)
             sumXY = sum(closes[j] * x[j] for j in range(length))
             sumX2 = sum(x[j] ** 2 for j in range(length))
-
             slope = (length * sumXY - sumX * sumY) / (length * sumX2 - sumX ** 2)
             average = sumY / length
-            mid = (length - 1) / 2
-            intercept = average - slope * mid
-
+            mid_index = (length - 1) / 2
+            intercept = average - slope * mid_index
             center = intercept
             line = [intercept + slope * (length - j - 1) for j in range(length)]
             stdDev = (sum((closes[j] - line[j]) ** 2 for j in range(length)) / length) ** 0.5
-
             lower = round(center - deviation * stdDev, 5)
             center = round(center, 5)
             upper = round(center + deviation * stdDev, 5)
         else:
             lower = center = upper = ""
-# === DEBUG: Получение 50 close[] для проверки канала ===
-@app.route("/api/debug/close/<symbol>")
-def debug_close(symbol):
-    try:
-        conn = sqlite3.connect(DB_PATH)
-        c = conn.cursor()
-        c.execute("""
-            SELECT close FROM prices
-            WHERE symbol = ?
-            ORDER BY timestamp DESC
-            LIMIT 50
-        """, (symbol.lower(),))
-        rows = [row[0] for row in c.fetchall()]
-        conn.close()
-        return jsonify(rows)
-    except Exception as e:
-        return jsonify({"error": str(e)})
+
+        group.setdefault(key, {
+            "open": o, "high": h, "low": l, "close": c_,
+            "signal_text": signal_text,
+            "signal_type": signal_type,
+            "lower": lower, "center": center, "upper": upper
+        })
+
+    candles = []
+    for k in sorted(group.keys()):
+        local_time = k.replace(tzinfo=timezone.utc).astimezone(ZoneInfo("Europe/Kyiv"))
+        c = group[k]
+        candles.append({
+            "time": local_time.strftime("%Y-%m-%d %H:%M"),
+            "open": c["open"],
+            "high": c["high"],
+            "low": c["low"],
+            "close": c["close"],
+            "signal": c["signal_text"],
+            "signal_type": c["signal_type"],
+            "channel": f"{c['lower']} / {c['center']} / {c['upper']}" if c["lower"] != "" else ""
+        })
+
+    return jsonify(candles or [])
 # === МОДУЛЬ 6: Инициализация БД и поток Binance WebSocket ===
 
 # Создание таблиц, если не существуют
