@@ -58,6 +58,8 @@
 </table>
 <button onclick="loadMore()" id="load-more-btn">Загрузить ещё</button>
 
+
+
 <script>
   const symbolName = window.location.pathname.split("/").pop();
   let lastCandleTime = null;
@@ -143,34 +145,32 @@
     loadHistorical();
   }
 
-  
-function checkNewCandle() {
-  const now = new Date();
-  const min = now.getMinutes();
-  const sec = now.getSeconds();
+  function checkNewCandle() {
+    const now = new Date();
+    const min = now.getMinutes();
+    const sec = now.getSeconds();
 
-  // Проверка выполняется только на 1-й минуте пятиминутки (01, 06, 11 и т.д.), чтобы дождаться появления свечи в базе
-  if (min % 5 === 1 && sec < 5) {
-    fetch(`/api/candles/${symbolName}?interval=5m`)
-      .then(res => res.json())
-      .then(data => {
-        if (!data.length) return;
-
-        const latest = data[data.length - 1].time;
-        if (latest !== lastCandleTime) {
-          lastCandleTime = latest;
-          offset = 0;
-          document.getElementById("history-body").innerHTML = "";
-          loadHistorical();
-        }
-      }).catch(e => console.error("Ошибка проверки новой свечи", e));
-  }
-}
+    // Проверка выполняется только на 1-й минуте пятиминутки
+    if (min % 5 === 1 && sec < 5) {
+      fetch(`/api/candles/${symbolName}?interval=5m`)
+        .then(res => res.json())
+        .then(data => {
+          if (!data.length) return;
+          const latest = data[data.length - 1].time;
+          if (latest !== lastCandleTime) {
+            lastCandleTime = latest;
+            offset = 0;
+            document.getElementById("history-body").innerHTML = "";
+            loadHistorical();
+          }
+        }).catch(e => console.error("Ошибка проверки новой свечи", e));
+    }
   }
 
   setInterval(() => updateLiveChannel(symbolName), 1000);
   setInterval(() => checkNewCandle(), 5000);
   loadHistorical();
 </script>
+
 </body>
 </html>
