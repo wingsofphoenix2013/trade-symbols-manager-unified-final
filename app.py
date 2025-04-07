@@ -140,6 +140,7 @@ def webhook():
 
 # === МОДУЛЬ 5: API свечей + сигнал + расчёт канала на каждую свечу ===
 
+@app.route("/api/candles/<symbol>")
 def api_candles(symbol):
     interval = request.args.get("interval", "1m")
     if interval not in ["1m", "5m"]:
@@ -187,16 +188,6 @@ def api_candles(symbol):
             l = min(x[2] for x in bucket)
             c_ = bucket[-1][3]
             candles_raw.append((ts, o, h, l, c_))
-
-        now = datetime.utcnow()
-        latest_allowed = now - timedelta(
-            minutes=now.minute % 5,
-            seconds=now.second,
-            microseconds=now.microsecond
-        )
-        # Исключаем текущую незавершённую свечу
-        candles_raw = [row for row in candles_raw if row[0] <= latest_allowed - timedelta(minutes=5)]
-
     else:
         for ts, o, h, l, c_ in prices_map:
             ts_clean = ts.replace(second=0, microsecond=0)
