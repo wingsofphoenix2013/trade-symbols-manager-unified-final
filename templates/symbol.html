@@ -1,131 +1,117 @@
 <!DOCTYPE html>
-<html>
+<html lang="ru">
 <head>
-  <meta charset="UTF-8">
-  <title>{{ symbol }}</title>
-  <style>
-    body {
-      font-family: 'Segoe UI', sans-serif;
-      background-color: #f4f7fa;
-      color: #333;
-      margin: 40px;
-    }
-    table {
-      border-collapse: collapse;
-      width: 100%;
-      background: white;
-      box-shadow: 0 0 10px rgba(0,0,0,0.05);
-    }
-    th, td {
-      padding: 12px 16px;
-      border-bottom: 1px solid #eee;
-      text-align: center;
-    }
-    th {
-      background-color: #f9fafb;
-      color: #555;
-    }
-    .buyzone { background-color: #ccffcc; }
-    .sellzone { background-color: #ffcccc; }
-    button {
-      margin: 0 5px;
-      padding: 8px 16px;
-      background-color: #3498db;
-      color: white;
-      border: none;
-      border-radius: 6px;
-      cursor: pointer;
-      font-weight: bold;
-    }
-    .active-btn {
-      background-color: #2c80b4;
-    }
-    a {
-      display: inline-block;
-      margin-bottom: 20px;
-      color: #3498db;
-      text-decoration: none;
-    }
-  </style>
+  <meta charset="UTF-8" />
+  <title>Детали по символу</title>
 </head>
 <body>
-<h1>Котировки: {{ symbol }}</h1>
-<a href="/">← Назад</a>
-<p style="text-align:center;">
-  <button id="btn1m" onclick="setIntervalType('1m')">M1</button>
-  <button id="btn5m" onclick="setIntervalType('5m')">M5</button>
-</p>
-<table>
-<thead><tr>
-<th>Время</th><th>Open</th><th>High</th><th>Low</th><th>Close</th><th>Сигнал</th><th>Канал</th>
-</tr></thead>
-<tbody id="candles"></tbody>
+<!-- === ТАБЛИЦА "Текущая свеча" (обновляется каждую секунду) === -->
+<h2>Текущая 5-минутная свеча</h2>
+<table id="live-candle" style="width:100%; border-collapse: collapse; font-family: sans-serif; margin-bottom: 20px;">
+  <thead>
+    <tr style="background:#eee; text-align: right;">
+      <th style="padding: 6px; border: 1px solid #ccc;">Время</th>
+      <th style="padding: 6px; border: 1px solid #ccc;">Цена открытия</th>
+      <th style="padding: 6px; border: 1px solid #ccc;">Текущая цена</th>
+      <th style="padding: 6px; border: 1px solid #ccc;">Канал</th>
+      <th style="padding: 6px; border: 1px solid #ccc;">Сигнал</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr id="live-row" style="text-align: right;">
+      <td style="padding: 6px; border: 1px solid #ccc;" id="lc-time">--</td>
+      <td style="padding: 6px; border: 1px solid #ccc;" id="lc-open">--</td>
+      <td style="padding: 6px; border: 1px solid #ccc;" id="lc-current">--</td>
+      <td style="padding: 6px; border: 1px solid #ccc;" id="lc-channel">--</td>
+      <td style="padding: 6px; border: 1px solid #ccc;" id="lc-signal">--</td>
+    </tr>
+  </tbody>
 </table>
-<p style="text-align:center;"><button onclick="loadMore()">Загрузить ещё</button></p>
+
+<!-- === ИСТОРИЧЕСКАЯ ТАБЛИЦА === -->
+<h2>История свечей</h2>
+<table id="history-table" style="width:100%; border-collapse: collapse; font-family: sans-serif;">
+  <thead>
+    <tr style="background:#ddd; text-align: right;">
+      <th style="padding: 6px; border: 1px solid #ccc;">Время</th>
+      <th style="padding: 6px; border: 1px solid #ccc;">Open</th>
+      <th style="padding: 6px; border: 1px solid #ccc;">High</th>
+      <th style="padding: 6px; border: 1px solid #ccc;">Low</th>
+      <th style="padding: 6px; border: 1px solid #ccc;">Close</th>
+      <th style="padding: 6px; border: 1px solid #ccc;">Канал</th>
+      <th style="padding: 6px; border: 1px solid #ccc;">Сигнал</th>
+    </tr>
+  </thead>
+  <tbody id="history-body"></tbody>
+</table>
 
 <script>
-let interval = "5m";
-let offset = 0;
-const limit = 20;
+  const symbolName = window.location.pathname.split("/").pop();
+  let lastCandleTime = null;
 
-function setIntervalType(i) {
-  interval = i;
-  offset = 0;
-  document.getElementById("candles").innerHTML = "";
+  async function updateLiveChannel(symbol) {
+    try {
+      const res = await fetch(`/api/live-channel/${symbol}`);
+      const data = await res.json();
+      if (data.error) return;
 
-  document.getElementById("btn1m").classList.remove("active-btn");
-  document.getElementById("btn5m").classList.remove("active-btn");
-  document.getElementById(i === "1m" ? "btn1m" : "btn5m").classList.add("active-btn");
+      document.getElementById("lc-time").textContent = data.local_time;
+      document.getElementById("lc-open").textContent = data.open_price.toFixed(5);
 
-  loadMore();
-}
+      const currentEl = document.getElementById("lc-current");
+      currentEl.textContent = data.current_price.toFixed(5);
+      currentEl.style.color = data.current_price > data.open_price ? 'green' : data.current_price < data.open_price ? 'red' : 'black';
 
-async function loadMore() {
-  const res = await fetch(`/api/candles/{{ symbol }}?interval=${interval}`);
-  const data = await res.json();
-  const tbody = document.getElementById("candles");
-  const sliced = data.slice(-(offset + limit), -offset || undefined).reverse();
-  sliced.forEach(row => {
-    const tr = document.createElement("tr");
-    ["time", "open", "high", "low", "close"].forEach(key => {
-      const td = document.createElement("td");
-      td.innerText = row[key];
-      tr.appendChild(td);
-    });
+      const ch = document.getElementById("lc-channel");
+      ch.textContent = `${data.direction} | ${data.width_percent}%`;
+      ch.style.color = data.direction_color;
 
-    const signalTd = document.createElement("td");
-    const channelTd = document.createElement("td");
-
-    if (interval === "5m") {
-      if (row.signal_type === "BUYZONE") signalTd.className = "buyzone";
-      else if (row.signal_type === "SELLZONE") signalTd.className = "sellzone";
-
-      if (row.signal && row.signal.endsWith("(-)")) {
-        signalTd.innerText = row.signal;
-      } else if (["BUYORDER", "SELLORDER"].includes(row.signal) && row.signal_type) {
-        const a = document.createElement("a");
-        a.href = "/order-info";
-        a.innerText = row.signal;
-        signalTd.appendChild(a);
-      } else if (["BUYORDER", "SELLORDER"].includes(row.signal)) {
-        signalTd.innerText = row.signal + " (-)";
-      }
-
-      channelTd.innerText = row.channel || "";
+      document.getElementById("lc-signal").textContent = data.signal || "--";
+    } catch (e) {
+      console.error("Ошибка загрузки live channel", e);
     }
+  }
 
-    tr.appendChild(signalTd);
-    tr.appendChild(channelTd);
-    tbody.appendChild(tr);
-  });
-  offset += limit;
-}
+  async function loadHistorical(symbol) {
+    try {
+      const res = await fetch(`/api/candles/${symbol}?interval=5m`);
+      const data = await res.json();
+      const body = document.getElementById("history-body");
+      body.innerHTML = "";
+      data.slice(-50).reverse().forEach(row => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td style='padding:6px; border:1px solid #ccc;'>${row.time}</td>
+          <td style='padding:6px; border:1px solid #ccc;'>${row.open}</td>
+          <td style='padding:6px; border:1px solid #ccc;'>${row.high}</td>
+          <td style='padding:6px; border:1px solid #ccc;'>${row.low}</td>
+          <td style='padding:6px; border:1px solid #ccc;'>${row.close}</td>
+          <td style='padding:6px; border:1px solid #ccc;'>${row.channel}</td>
+          <td style='padding:6px; border:1px solid #ccc;'>${row.signal}</td>
+        `;
+        body.appendChild(tr);
+      });
+      if (data.length > 0) {
+        lastCandleTime = data[data.length - 1].time;
+      }
+    } catch (e) {
+      console.error("Ошибка загрузки истории", e);
+    }
+  }
 
-// Автоустановка по умолчанию
-document.addEventListener("DOMContentLoaded", () => {
-  document.getElementById("btn5m").classList.add("active-btn");
-  loadMore();
-});
+  function checkNewCandle() {
+    const now = new Date();
+    const minutes = now.getMinutes();
+    const rounded = Math.floor(minutes / 5) * 5;
+    const candleTime = `${now.getFullYear()}-${(now.getMonth()+1).toString().padStart(2,'0')}-${now.getDate().toString().padStart(2,'0')} ${now.getHours().toString().padStart(2,'0')}:${rounded.toString().padStart(2,'0')}`;
+    if (candleTime !== lastCandleTime) {
+      loadHistorical(symbolName);
+    }
+  }
+
+  setInterval(() => updateLiveChannel(symbolName), 1000);
+  setInterval(() => checkNewCandle(), 5000);
+  loadHistorical(symbolName);
 </script>
 </body>
 </html>
