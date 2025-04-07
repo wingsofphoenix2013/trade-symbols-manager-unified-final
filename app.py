@@ -199,7 +199,7 @@ def api_candles(symbol):
                 signal_text = orders[0][1] + " (-)"
                 signal_type = zones[-1][1]
 
-        # === Расчёт канала (точно как в TradingView) ===
+        # === Расчёт канала (в точности как Pine Script) ===
         window = prices_map[max(0, i - length + 1): i + 1]
         if len(window) == length:
             closes = [w[4] for w in window]
