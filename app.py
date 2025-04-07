@@ -330,7 +330,7 @@ def fetch_kline_stream():
                 time.sleep(5)
 
     threading.Thread(target=run, daemon=True).start()
-# === МОДУЛЬ 7: Debug с intercept из Pine Script ===
+# === МОДУЛЬ 7: Debug — intercept через mid и avgX ===
 
 @app.route("/debug/<symbol>")
 def debug_channel(symbol):
@@ -387,17 +387,18 @@ def debug_channel(symbol):
     lows = [c[1]["low"] for c in candles[-(length - 1):]]
     highs = [c[1]["high"] for c in candles[-(length - 1):]]
 
-    # slope
     x = list(range(length))
     avgX = sum(x) / length
-    avgY = sum(closes) / length
+    mid = sum(closes) / length
+
+    # slope
+    avgY = mid
     covXY = sum((x[i] - avgX) * (closes[i] - avgY) for i in range(length))
     varX = sum((x[i] - avgX) ** 2 for i in range(length))
     slope = covXY / varX
 
-    # intercept по Pine Script (через mid)
-    mid = sum(closes) / length
-    intercept = mid - slope * (length // 2) + ((1 - (length % 2)) / 2) * slope
+    # intercept через mid и avgX
+    intercept = mid - slope * avgX
 
     # stdDev
     dev = 0.0
@@ -444,7 +445,7 @@ def debug_channel(symbol):
         </style>
     </head>
     <body>
-        <h2>DEBUG: {symbol.upper()} ({interval}) + current + intercept by mid</h2>
+        <h2>DEBUG: {symbol.upper()} ({interval}) + current + intercept by mid & avgX</h2>
         <div class="box">
             slope = {round(slope, 8)}<br>
             intercept = {round(intercept, 5)}<br>
