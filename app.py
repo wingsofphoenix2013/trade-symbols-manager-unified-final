@@ -249,6 +249,23 @@ def api_candles(symbol):
         })
 
     return jsonify(candles or [])
+# === DEBUG: Получение 50 close[] для проверки канала ===
+@app.route("/api/debug/close/<symbol>")
+def debug_close(symbol):
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute("""
+            SELECT close FROM prices
+            WHERE symbol = ?
+            ORDER BY timestamp DESC
+            LIMIT 50
+        """, (symbol.lower(),))
+        rows = [row[0] for row in c.fetchall()]
+        conn.close()
+        return jsonify(rows)
+    except Exception as e:
+        return jsonify({"error": str(e)})
 # === МОДУЛЬ 6: Инициализация БД и поток Binance WebSocket ===
 
 # Создание таблиц, если не существуют
