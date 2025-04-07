@@ -99,7 +99,7 @@
       const slice = data.slice(-offset - limit, -offset || undefined).reverse();
       slice.forEach(row => {
         const tr = document.createElement("tr");
-        tr.innerHTML = `
+        tr.innerHTML = `<tr>
           <td>${row.time}</td>
           <td>${row.open}</td>
           <td>${row.high}</td>
@@ -107,7 +107,7 @@
           <td>${row.close}</td>
           <td>${row.channel}</td>
           <td>${row.signal || "--"}</td>
-        `;
+        </tr>`;
         body.appendChild(tr);
       });
       if (data.length > offset + limit) {
