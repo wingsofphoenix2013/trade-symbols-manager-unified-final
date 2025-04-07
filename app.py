@@ -330,7 +330,7 @@ def fetch_kline_stream():
                 time.sleep(5)
 
     threading.Thread(target=run, daemon=True).start()
-# === МОДУЛЬ 7: Debug (TV-стиль + контрольные зоны + прямой порядок) ===
+# === МОДУЛЬ 7: Debug с учётом текущей цены (latest_price + 49 закрытых свечей) ===
 
 @app.route("/debug/<symbol>")
 def debug_channel(symbol):
@@ -375,32 +375,39 @@ def debug_channel(symbol):
         c_ = bucket[-1][3]
         candles.append((ts, {"open": o, "high": h, "low": l, "close": c_}))
 
-    if len(candles) < length:
+    if len(candles) < length - 1:
         return "<h3>Недостаточно данных</h3>"
 
-    closes = [c[1]["close"] for c in candles[-length:]]
-    lows = [c[1]["low"] for c in candles[-length:]]
-    highs = [c[1]["high"] for c in candles[-length:]]
+    closes = [c[1]["close"] for c in candles[-(length - 1):]]
 
-    # 1. Slope через линейную регрессию как delta линии
+    # добавляем текущую цену
+    current_price = latest_price.get(symbol.lower())
+    if not current_price:
+        return "<h3>Нет текущей цены</h3>"
+
+    closes.append(current_price)
+
+    # lows/highs — только по закрытым свечам
+    lows = [c[1]["low"] for c in candles[-(length - 1):]]
+    highs = [c[1]["high"] for c in candles[-(length - 1):]]
+
+    # slope и intercept по TV-логике
     x = list(range(length))
     avgX = sum(x) / length
     avgY = sum(closes) / length
     covXY = sum((x[i] - avgX) * (closes[i] - avgY) for i in range(length))
     varX = sum((x[i] - avgX) ** 2 for i in range(length))
     slope = covXY / varX
-
-    # 2. Intercept по центру
     intercept = avgY - slope * avgX
 
-    # 3. stdDev по формуле TV (по всей линии)
+    # stdDev
     dev = 0.0
     for i in range(length):
         expected = slope * i + intercept
         dev += (closes[i] - expected) ** 2
     stdDev = sqrt(dev / length)
 
-    # 4. Канал
+    # Канал
     y_start = intercept
     y_end = intercept + slope * (length - 1)
     center = (y_start + y_end) / 2
@@ -410,14 +417,15 @@ def debug_channel(symbol):
     angle_deg = round(degrees(atan(slope)), 2)
 
     rows_html = ""
-    recent_candles = candles[-length:]
-    for i in range(length):
+    recent_candles = candles[-(length - 1):]
+    for i in range(length - 1):
         ts = recent_candles[i][0].astimezone(ZoneInfo("Europe/Kyiv")).strftime("%Y-%m-%d %H:%M")
         o = recent_candles[i][1]["open"]
         h = recent_candles[i][1]["high"]
         l = recent_candles[i][1]["low"]
         c_ = recent_candles[i][1]["close"]
         rows_html += f"<tr><td>{ts}</td><td>{o}</td><td>{h}</td><td>{l}</td><td>{c_}</td><td>—</td></tr>"
+    rows_html += f"<tr><td><i>Current (latest_price)</i></td><td colspan='4'>Цена: {current_price}</td><td>—</td></tr>"
 
     min_close = min(closes)
     max_close = max(closes)
@@ -437,7 +445,7 @@ def debug_channel(symbol):
         </style>
     </head>
     <body>
-        <h2>DEBUG: {symbol.upper()} ({interval})</h2>
+        <h2>DEBUG: {symbol.upper()} ({interval}) + current</h2>
         <div class="box">
             slope = {round(slope, 8)}<br>
             intercept = {round(intercept, 5)}<br>
