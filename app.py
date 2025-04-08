@@ -707,8 +707,14 @@ def init_db():
 
     conn.commit()
     conn.close()
-# === МОДУЛЬ 12: API — просмотр содержимого таблиц БД ===
+# === МОДУЛЬ 12: API + интерфейс просмотра содержимого таблиц БД ===
 
+# HTML-интерфейс для просмотра базы данных
+@app.route("/db")
+def view_db():
+    return render_template("db.html")
+
+# API для загрузки данных из таблицы с фильтрацией и пагинацией
 @app.route("/api/db/<table>")
 def api_db_table(table):
     # Параметры запроса
