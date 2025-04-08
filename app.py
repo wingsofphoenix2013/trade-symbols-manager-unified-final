@@ -28,10 +28,15 @@ def load_channel_config():
 def index():
     return render_template("index.html")
 
-# Страница конкретного символа
+# Страница конкретного символа (старая)
 @app.route("/symbol/<symbol>")
 def symbol(symbol):
     return render_template("symbol.html", symbol=symbol.upper())
+
+# Страница новой версии просмотра пары (ticker.html)
+@app.route("/ticker/<symbol>")
+def ticker(symbol):
+    return render_template("ticker.html", symbol=symbol.upper())
 
 # Страница настроек канала
 @app.route("/channel-settings", methods=["GET", "POST"])
