@@ -164,4 +164,28 @@
   </div>
 </div>
 
+
 <script>
+  const symbolName = window.location.pathname.split("/").pop();
+  document.title = `Пара: ${symbolName.toUpperCase()}`;
+  document.getElementById("pair-name").textContent = symbolName.toUpperCase();
+
+  async function updateLiveInfo() {
+    try {
+      const res = await fetch(`/api/live-channel/${symbolName}`);
+      const data = await res.json();
+      if (data.error) return;
+
+      document.getElementById("live-price").textContent = data.current_price.toFixed(5);
+      document.getElementById("channel-direction").textContent = data.direction;
+      document.getElementById("channel-width").textContent = `${data.width_percent}%`;
+    } catch (e) {
+      console.error("Ошибка загрузки канала:", e);
+    }
+  }
+
+  setInterval(updateLiveInfo, 1000);
+  updateLiveInfo();
+</script>
+</body>
+</html>
