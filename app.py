@@ -707,6 +707,51 @@ def init_db():
 
     conn.commit()
     conn.close()
+# === МОДУЛЬ 12: API — просмотр содержимого таблиц БД ===
+
+@app.route("/api/db/<table>")
+def api_db_table(table):
+    # Параметры запроса
+    field = request.args.get("field")     # имя колонки для фильтра
+    value = request.args.get("value")     # значение для поиска
+    offset = int(request.args.get("offset", 0))  # смещение для постраничного просмотра
+    limit = int(request.args.get("limit", 50))   # количество записей
+
+    # Список разрешённых таблиц
+    allowed_tables = {"symbols", "signals", "prices", "trades", "trade_exits"}
+
+    # Проверка безопасности: таблица должна быть разрешена
+    if table not in allowed_tables:
+        return jsonify({"error": "Недопустимая таблица"}), 400
+
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+
+        # Формируем базовый запрос
+        query = f"SELECT * FROM {table}"
+        params = []
+
+        # Добавляем фильтр, если передан field и value
+        if field and value:
+            query += f" WHERE {field} LIKE ?"
+            params.append(f"%{value}%")
+
+        # Добавляем сортировку и лимит
+        query += " ORDER BY id DESC LIMIT ? OFFSET ?"
+        params.extend([limit, offset])
+
+        # Выполняем запрос
+        c.execute(query, params)
+        rows = [dict(row) for row in c.fetchall()]
+        conn.close()
+
+        # Возвращаем результат
+        return jsonify(rows)
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 # Запуск сервера + инициализация
 if __name__ == "__main__":
     init_db()
