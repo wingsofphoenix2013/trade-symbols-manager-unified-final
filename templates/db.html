@@ -135,7 +135,8 @@
       if (!document.getElementById("db-table")) {
         const tbl = document.createElement("table");
         tbl.id = "db-table";
-        const headerRow = document.createElement("tr");
+        console.log("Ключи:", Object.keys(data[0]));
+      const headerRow = document.createElement("tr");
         Object.keys(data[0]).forEach(key => {
           const th = document.createElement("th");
           th.innerText = key;
