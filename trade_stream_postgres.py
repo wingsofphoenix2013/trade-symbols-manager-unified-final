@@ -1,3 +1,4 @@
+
 import psycopg2
 import websocket
 import json
@@ -43,7 +44,7 @@ def run_trade_stream():
             symbol = data['data']['s'].lower()
             price = float(data['data']['p'])
             new_latest_price[symbol] = price
-            print(f"[{symbol}] → {price}", flush=True)
+            # print котировки отключен для тихого режима
         except Exception as e:
             print("Ошибка при обработке сообщения:", repr(e), flush=True)
 
