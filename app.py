@@ -718,15 +718,12 @@ def view_db():
 @app.route("/api/db/<table>")
 def api_db_table(table):
     # Параметры запроса
-    field = request.args.get("field")     # имя колонки для фильтра
-    value = request.args.get("value")     # значение для поиска
-    offset = int(request.args.get("offset", 0))  # смещение для постраничного просмотра
-    limit = int(request.args.get("limit", 50))   # количество записей
+    field = request.args.get("field")
+    value = request.args.get("value")
+    offset = int(request.args.get("offset", 0))
+    limit = int(request.args.get("limit", 50))
 
-    # Список разрешённых таблиц
     allowed_tables = {"symbols", "signals", "prices", "trades", "trade_exits"}
-
-    # Проверка безопасности: таблица должна быть разрешена
     if table not in allowed_tables:
         return jsonify({"error": "Недопустимая таблица"}), 400
 
@@ -735,25 +732,26 @@ def api_db_table(table):
         conn.row_factory = sqlite3.Row
         c = conn.cursor()
 
-        # Формируем базовый запрос
+        # Проверяем наличие колонки id
+        c.execute(f"PRAGMA table_info({table})")
+        columns = [row[1] for row in c.fetchall()]
+        order_column = "id" if "id" in columns else "rowid"
+
+        # Формируем запрос
         query = f"SELECT * FROM {table}"
         params = []
 
-        # Добавляем фильтр, если передан field и value
         if field and value:
             query += f" WHERE {field} LIKE ?"
             params.append(f"%{value}%")
 
-        # Добавляем сортировку и лимит
-        query += " ORDER BY id DESC LIMIT ? OFFSET ?"
+        query += f" ORDER BY {order_column} DESC LIMIT ? OFFSET ?"
         params.extend([limit, offset])
 
-        # Выполняем запрос
         c.execute(query, params)
         rows = [dict(row) for row in c.fetchall()]
         conn.close()
 
-        # Возвращаем результат
         return jsonify(rows)
 
     except Exception as e:
