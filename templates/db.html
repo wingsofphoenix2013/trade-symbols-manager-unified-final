@@ -119,7 +119,7 @@
 
       const res = await fetch(url);
       const data = await res.json();
-    console.log("Загруженные данные:", data);
+    
 
       if (data.error) {
         document.getElementById("result").innerHTML = `<p style="color:red;">Ошибка: ${data.error}</p>`;
@@ -154,12 +154,7 @@
           const localTime = new Date(val).toLocaleString("ru-RU", { timeZone: "Europe/Kyiv" });
           td.innerText = localTime;
         } else {
-          if (key.toLowerCase().includes("time") || key.toLowerCase().includes("timestamp")) {
-          const localTime = new Date(val).toLocaleString("ru-RU", { timeZone: "Europe/Kyiv" });
-          td.innerText = localTime;
-        } else {
-          td.innerText = val ?? "";
-        }
+          td.innerText = val ?? '';
         }
           tr.appendChild(td);
         });
