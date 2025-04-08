@@ -9,9 +9,6 @@ import websocket
 import math
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
-# Временный перенос базы из data/prices.db в prices.db
-if os.path.exists("data/prices.db") and not os.path.exists("prices.db"):
-    os.rename("data/prices.db", "prices.db")
 
 app = Flask(__name__)
 DB_PATH = "/data/prices.db"
@@ -253,6 +250,7 @@ def api_candles(symbol):
 
     result = list(reversed(list(group.values())))
     return jsonify(result)
+
 # === МОДУЛЬ 6: Инициализация БД и поток Binance WebSocket ===
 
 # Создание таблиц, если не существуют
@@ -629,6 +627,7 @@ def api_live_channel(symbol):
         "width_percent": width_percent,
         "signal": signal
     })
+
 # === МОДУЛЬ 11: Инициализация структуры БД (таблицы) ===
 
 def init_db():
