@@ -4,8 +4,20 @@
   <meta charset="UTF-8" />
   <title>Пара: </title>
   <style>
-    body { font-family: sans-serif; margin: 20px; background: #f9f9f9; }
-    .widget-container { display: flex; gap: 20px; margin-bottom: 30px; }
+    body {
+      font-family: sans-serif;
+      margin: 20px;
+      background: #f9f9f9;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .widget-container {
+      display: flex;
+      gap: 20px;
+      margin-bottom: 30px;
+      justify-content: center;
+    }
     .widget {
       display: flex;
       flex-direction: column;
@@ -41,13 +53,18 @@
       text-decoration: none;
       border-radius: 4px;
     }
-    table {
+    .tools-box {
       width: 100%;
       max-width: 760px;
       background: white;
-      border-collapse: collapse;
-      margin-top: 10px;
+      border-radius: 8px;
+      border: 1px solid #ccc;
       box-shadow: 2px 2px 6px rgba(0,0,0,0.05);
+      padding: 10px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
     }
     th, td {
       border: 1px solid #ccc;
@@ -70,7 +87,6 @@
 </head>
 <body>
 <a href="/" class="btn">← Назад</a>
-<h2 id="symbol-title">Торговая пара</h2>
 
 <div class="widget-container">
   <div class="widget">
@@ -87,29 +103,30 @@
   </div>
 </div>
 
-<h3>Торговые инструменты</h3>
-<table>
-  <thead>
-    <tr>
-      <th>Текущий курс</th>
-      <th>Направление канала</th>
-      <th>Ширина канала</th>
-      <th>Торговля</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td id="live-price">--</td>
-      <td id="channel-direction">--</td>
-      <td id="channel-width">--</td>
-      <td><button class="trade-btn">Разрешить торговлю</button></td>
-    </tr>
-  </tbody>
-</table>
+<div class="tools-box">
+  <h3 style="margin-left: 10px;">Торговые инструменты</h3>
+  <table>
+    <thead>
+      <tr>
+        <th>Текущий курс</th>
+        <th>Направление канала</th>
+        <th>Ширина канала</th>
+        <th>Торговля</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td id="live-price">--</td>
+        <td id="channel-direction">--</td>
+        <td id="channel-width">--</td>
+        <td><button class="trade-btn">Разрешить торговлю</button></td>
+      </tr>
+    </tbody>
+  </table>
+</div>
 
 <script>
   const symbolName = window.location.pathname.split("/").pop();
-  document.getElementById("symbol-title").textContent = `Пара: ${symbolName.toUpperCase()}`;
   document.title = `Пара: ${symbolName.toUpperCase()}`;
   document.getElementById("pair-name").textContent = symbolName.toUpperCase();
 
@@ -119,17 +136,14 @@
       const data = await res.json();
       if (data.error) return;
 
-      // текущая цена
       document.getElementById("live-price").textContent = data.current_price.toFixed(5);
 
-      // направление канала + эмоджи
       const dir = data.direction.toLowerCase();
       let emoji = "➡️";
       if (dir.includes("восход")) emoji = "⬆️";
       else if (dir.includes("нисход")) emoji = "⬇️";
       document.getElementById("channel-direction").textContent = `${data.direction} ${emoji}`;
 
-      // ширина канала
       document.getElementById("channel-width").textContent = `${data.width_percent}%`;
     } catch (e) {
       console.error("Ошибка загрузки канала:", e);
