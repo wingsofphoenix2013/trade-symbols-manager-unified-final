@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>Просмотр таблиц БД</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background-color: #f4f7fa;
+      padding: 40px;
+    }
+    h1 {
+      text-align: center;
+      color: #2c3e50;
+    }
+    .container {
+      max-width: 1000px;
+      margin: auto;
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.05);
+    }
+    label {
+      display: block;
+      margin-top: 10px;
+      font-weight: bold;
+    }
+    select, input {
+      width: calc(33% - 10px);
+      padding: 8px;
+      margin-right: 10px;
+      margin-top: 5px;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+    }
+    button {
+      margin-top: 20px;
+      padding: 10px 20px;
+      background-color: #3498db;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: bold;
+    }
+    button:hover {
+      background-color: #2980b9;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 30px;
+      font-size: 13px;
+    }
+    th, td {
+      border: 1px solid #ccc;
+      padding: 6px 8px;
+      text-align: left;
+    }
+    th {
+      background-color: #ecf0f1;
+    }
+    .back-link {
+      display: block;
+      text-align: center;
+      margin-top: 30px;
+      color: #3498db;
+      text-decoration: none;
+    }
+  </style>
+</head>
+<body>
+  <h1>Просмотр таблиц БД</h1>
+  <div class="container">
+    <label>Выберите таблицу и фильтр:</label>
+    <select id="tableSelect">
+      <option value="signals">signals</option>
+      <option value="symbols">symbols</option>
+      <option value="prices">prices</option>
+      <option value="trades">trades</option>
+      <option value="trade_exits">trade_exits</option>
+    </select>
+    <input id="filterField" placeholder="Поле (например: symbol)">
+    <input id="filterValue" placeholder="Значение (например: BTCUSDT)">
+    <button onclick="loadTable()">Показать</button>
+
+    <div id="result"></div>
+    <button id="loadMoreBtn" style="display:none;" onclick="loadMore()">Загрузить ещё</button>
+
+    <a class="back-link" href="/">← Назад</a>
+  </div>
+
+  <script>
+    let offset = 0;
+    let currentTable = "";
+    let currentField = "";
+    let currentValue = "";
+    const limit = 50;
+
+    async function loadTable(reset=true) {
+      const table = document.getElementById("tableSelect").value;
+      const field = document.getElementById("filterField").value.trim();
+      const value = document.getElementById("filterValue").value.trim();
+
+      if (reset) {
+        offset = 0;
+        document.getElementById("result").innerHTML = "";
+      }
+
+      currentTable = table;
+      currentField = field;
+      currentValue = value;
+
+      let url = `/api/db/${table}?limit=${limit}&offset=${offset}`;
+      if (field && value) {
+        url += `&field=${encodeURIComponent(field)}&value=${encodeURIComponent(value)}`;
+      }
+
+      const res = await fetch(url);
+      const data = await res.json();
+
+      if (data.error) {
+        document.getElementById("result").innerHTML = `<p style="color:red;">Ошибка: ${data.error}</p>`;
+        return;
+      }
+
+      if (!data.length && offset === 0) {
+        document.getElementById("result").innerHTML = "<p>Нет данных</p>";
+        return;
+      }
+
+      const tableEl = document.getElementById("result");
+      if (!document.getElementById("db-table")) {
+        const tbl = document.createElement("table");
+        tbl.id = "db-table";
+        const headerRow = document.createElement("tr");
+        Object.keys(data[0]).forEach(key => {
+          const th = document.createElement("th");
+          th.innerText = key;
+          headerRow.appendChild(th);
+        });
+        tbl.appendChild(headerRow);
+        tableEl.appendChild(tbl);
+      }
+
+      const tbl = document.getElementById("db-table");
+      data.forEach(row => {
+        const tr = document.createElement("tr");
+        Object.values(row).forEach(val => {
+          const td = document.createElement("td");
+          td.innerText = val;
+          tr.appendChild(td);
+        });
+        tbl.appendChild(tr);
+      });
+
+      if (data.length === limit) {
+        document.getElementById("loadMoreBtn").style.display = "inline-block";
+      } else {
+        document.getElementById("loadMoreBtn").style.display = "none";
+      }
+
+      offset += limit;
+    }
+
+    function loadMore() {
+      loadTable(false);
+    }
+
+    window.onload = loadTable;
+  </script>
+</body>
+</html>
