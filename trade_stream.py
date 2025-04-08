@@ -22,6 +22,7 @@ def load_symbols():
 def run_trade_stream():
     def on_message(ws, message):
         try:
+            print("📨 RAW MESSAGE:", message[:100])  # покажем начало
             data = json.loads(message)
             symbol = data['data']['s'].lower()
             price = float(data['data']['p'])
@@ -34,17 +35,18 @@ def run_trade_stream():
         while True:
             try:
                 symbols = load_symbols()
+                print("✅ Список символов:", symbols)
                 if not symbols:
-                    print("Нет символов для подписки, ждем...")
+                    print("⚠️ Нет символов для подписки. Ждём...")
                     time.sleep(10)
                     continue
                 streams = [f"{s}@trade" for s in symbols]
                 url = "wss://fstream.binance.com/stream?streams=" + "/".join(streams)
-                print("🔌 Подключение к Binance:", url)
+                print("🔌 URL подписки:", url)
                 ws = websocket.WebSocketApp(url, on_message=on_message)
                 ws.run_forever()
             except Exception as e:
-                print("Ошибка WebSocket:", e)
+                print("❌ Ошибка WebSocket:", e)
                 time.sleep(5)
 
     threading.Thread(target=stream_loop, daemon=True).start()
@@ -52,4 +54,4 @@ def run_trade_stream():
 if __name__ == "__main__":
     run_trade_stream()
     while True:
-        time.sleep(60)  # основной поток спит, логика живёт в фоне
+        time.sleep(60)
