@@ -17,39 +17,39 @@ def load_symbols():
         conn.close()
         return symbols
     except Exception as e:
-        print("Ошибка при загрузке символов:", e)
+        print("Ошибка при загрузке символов:", e, flush=True)
         return []
 
 def run_trade_stream():
-    print('🚀 trade_stream запущен')
+    print('🚀 trade_stream запущен', flush=True)
     def on_message(ws, message):
         try:
-            print("📨 RAW MESSAGE:", message[:100])  # покажем начало
+            print("📨 RAW MESSAGE:", message[:100], flush=True)  # покажем начало
             data = json.loads(message)
             symbol = data['data']['s'].lower()
             price = float(data['data']['p'])
             new_latest_price[symbol] = price
-            print(f"[{symbol}] → {price}")
+            print(f"[{symbol}] → {price}", flush=True)
         except Exception as e:
-            print("Ошибка при обработке сообщения:", e)
+            print("Ошибка при обработке сообщения:", e, flush=True)
 
     def stream_loop():
-        print('🔁 stream_loop стартовал')
+        print('🔁 stream_loop стартовал', flush=True)
         while True:
             try:
                 symbols = load_symbols()
-                print("✅ Список символов:", symbols)
+                print("✅ Список символов:", symbols, flush=True)
                 if not symbols:
-                    print("⚠️ Нет символов для подписки. Ждём...")
+                    print("⚠️ Нет символов для подписки. Ждём...", flush=True)
                     time.sleep(10)
                     continue
                 streams = [f"{s}@trade" for s in symbols]
                 url = "wss://fstream.binance.com/stream?streams=" + "/".join(streams)
-                print("🔌 URL подписки:", url)
+                print("🔌 URL подписки:", url, flush=True)
                 ws = websocket.WebSocketApp(url, on_message=on_message)
                 ws.run_forever()
             except Exception as e:
-                print("❌ Ошибка WebSocket:", e)
+                print("❌ Ошибка WebSocket:", e, flush=True)
                 time.sleep(5)
 
     threading.Thread(target=stream_loop, daemon=True).start()
