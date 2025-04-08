@@ -57,7 +57,6 @@ def order_info():
 def api_symbols():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute("CREATE TABLE IF NOT EXISTS symbols (name TEXT PRIMARY KEY)")
     if request.method == "GET":
         c.execute("SELECT name FROM symbols ORDER BY name ASC")
         symbols = [row[0].upper() for row in c.fetchall()]
@@ -122,12 +121,6 @@ def webhook():
         timestamp = datetime.utcnow().replace(second=0, microsecond=0).isoformat()
         conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
-        c.execute("""CREATE TABLE IF NOT EXISTS signals (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            symbol TEXT,
-            action TEXT,
-            timestamp TEXT
-        )""")
         c.execute("INSERT INTO signals (symbol, action, timestamp) VALUES (?, ?, ?)", (symbol, action, timestamp))
         conn.commit()
         conn.close()
@@ -138,7 +131,6 @@ def webhook():
         print("Webhook error:", e)
         sys.stdout.flush()
     return jsonify({"status": "ignored"}), 400
-
 # === МОДУЛЬ 5: API свечей + сигнал + расчёт канала на каждую свечу ===
 
 @app.route("/api/candles/<symbol>")
@@ -635,6 +627,44 @@ def api_live_channel(symbol):
         "width_percent": width_percent,
         "signal": signal
     })
+# === МОДУЛЬ 11: Инициализация структуры БД (таблицы) ===
+
+def init_db():
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+
+    # Таблица торговых пар
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS symbols (
+            name TEXT PRIMARY KEY
+        )
+    """)
+
+    # Таблица сигналов
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS signals (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            symbol TEXT,
+            action TEXT,
+            timestamp TEXT
+        )
+    """)
+
+    # Таблица свечей
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS prices (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            symbol TEXT,
+            timestamp TEXT,
+            open REAL,
+            high REAL,
+            low REAL,
+            close REAL
+        )
+    """)
+
+    conn.commit()
+    conn.close()
 # Запуск сервера + инициализация
 if __name__ == "__main__":
     init_db()
