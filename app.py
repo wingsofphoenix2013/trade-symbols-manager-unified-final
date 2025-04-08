@@ -627,10 +627,12 @@ def api_live_channel(symbol):
         "width_percent": width_percent,
         "signal": signal
     })
+
 # === МОДУЛЬ 11: Инициализация структуры БД (таблицы) ===
 
 def init_db():
     conn = sqlite3.connect(DB_PATH)
+    conn.execute("PRAGMA foreign_keys = ON")
     c = conn.cursor()
 
     # Таблица торговых пар
@@ -640,7 +642,7 @@ def init_db():
         )
     """)
 
-    # Таблица сигналов
+    # Таблица сигналов (входящие webhook-события)
     c.execute("""
         CREATE TABLE IF NOT EXISTS signals (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -650,7 +652,7 @@ def init_db():
         )
     """)
 
-    # Таблица свечей
+    # Таблица котировок/свечей
     c.execute("""
         CREATE TABLE IF NOT EXISTS prices (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -660,6 +662,41 @@ def init_db():
             high REAL,
             low REAL,
             close REAL
+        )
+    """)
+
+    # Таблица сделок для тестирования стратегии
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS trades (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            symbol TEXT,
+            side TEXT,
+            entry_time TEXT,
+            entry_price REAL,
+            size REAL,
+            exit_time TEXT,
+            exit_price REAL,
+            pnl REAL,
+            status TEXT,
+            signal_type TEXT,
+            strategy TEXT,
+            note TEXT,
+            FOREIGN KEY (symbol) REFERENCES symbols(name)
+        )
+    """)
+
+    # Таблица частичных выходов из сделок
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS trade_exits (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            trade_id INTEGER,
+            time TEXT,
+            price REAL,
+            size REAL,
+            pnl REAL,
+            reason TEXT,
+            signal_type TEXT,
+            FOREIGN KEY (trade_id) REFERENCES trades(id)
         )
     """)
 
