@@ -37,7 +37,7 @@
       padding: 20px;
       border: 1px solid #ccc;
       border-radius: 8px;
-      min-height: 120px;
+      min-height: 90px;
       box-shadow: 2px 2px 6px rgba(0,0,0,0.05);
       text-align: center;
     }
@@ -137,13 +137,7 @@
       if (data.error) return;
 
       document.getElementById("live-price").textContent = data.current_price.toFixed(5);
-
-      const dir = data.direction.toLowerCase();
-      let emoji = "➡️";
-      if (dir.includes("восход")) emoji = "⬆️";
-      else if (dir.includes("нисход")) emoji = "⬇️";
-      document.getElementById("channel-direction").textContent = `${data.direction} ${emoji}`;
-
+      document.getElementById("channel-direction").textContent = data.direction;
       document.getElementById("channel-width").textContent = `${data.width_percent}%`;
     } catch (e) {
       console.error("Ошибка загрузки канала:", e);
