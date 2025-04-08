@@ -5,7 +5,7 @@ import json
 import time
 import threading
 
-DB_PATH = "data/prices.db"
+DB_PATH = "prices.db"
 new_latest_price = {}
 
 def load_symbols():
@@ -17,39 +17,39 @@ def load_symbols():
         conn.close()
         return symbols
     except Exception as e:
-        print("Ошибка при загрузке символов:", e, flush=True)
+        print("Ошибка при загрузке символов:", e)
         return []
 
 def run_trade_stream():
-    print('🚀 trade_stream запущен', flush=True)
+    print('🚀 trade_stream запущен')
     def on_message(ws, message):
         try:
-            print("📨 RAW MESSAGE:", message[:100], flush=True)  # покажем начало
+            print("📨 RAW MESSAGE:", message[:100])  # покажем начало
             data = json.loads(message)
             symbol = data['data']['s'].lower()
             price = float(data['data']['p'])
             new_latest_price[symbol] = price
-            print(f"[{symbol}] → {price}", flush=True)
+            print(f"[{symbol}] → {price}")
         except Exception as e:
-            print("Ошибка при обработке сообщения:", e, flush=True)
+            print("Ошибка при обработке сообщения:", e)
 
     def stream_loop():
-        print('🔁 stream_loop стартовал', flush=True)
+        print('🔁 stream_loop стартовал')
         while True:
             try:
                 symbols = load_symbols()
-                print("✅ Список символов:", symbols, flush=True)
+                print("✅ Список символов:", symbols)
                 if not symbols:
-                    print("⚠️ Нет символов для подписки. Ждём...", flush=True)
+                    print("⚠️ Нет символов для подписки. Ждём...")
                     time.sleep(10)
                     continue
                 streams = [f"{s}@trade" for s in symbols]
                 url = "wss://fstream.binance.com/stream?streams=" + "/".join(streams)
-                print("🔌 URL подписки:", url, flush=True)
+                print("🔌 URL подписки:", url)
                 ws = websocket.WebSocketApp(url, on_message=on_message)
                 ws.run_forever()
             except Exception as e:
-                print("❌ Ошибка WebSocket:", e, flush=True)
+                print("❌ Ошибка WebSocket:", e)
                 time.sleep(5)
 
     threading.Thread(target=stream_loop, daemon=True).start()
