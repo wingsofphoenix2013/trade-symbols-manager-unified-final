@@ -1,3 +1,4 @@
+
 import websocket
 import sqlite3
 import json
@@ -20,6 +21,7 @@ def load_symbols():
         return []
 
 def run_trade_stream():
+    print('🚀 trade_stream запущен')
     def on_message(ws, message):
         try:
             print("📨 RAW MESSAGE:", message[:100])  # покажем начало
@@ -32,6 +34,7 @@ def run_trade_stream():
             print("Ошибка при обработке сообщения:", e)
 
     def stream_loop():
+        print('🔁 stream_loop стартовал')
         while True:
             try:
                 symbols = load_symbols()
