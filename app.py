@@ -665,7 +665,7 @@ def init_db():
         )
     """)
 
-    # Таблица сделок для тестирования стратегии
+    # Таблица сделок
     c.execute("""
         CREATE TABLE IF NOT EXISTS trades (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -674,18 +674,19 @@ def init_db():
             entry_time TEXT,
             entry_price REAL,
             size REAL,
+            leverage REAL,
             exit_time TEXT,
             exit_price REAL,
             pnl REAL,
             status TEXT,
-            signal_type TEXT,
             strategy TEXT,
-            note TEXT,
+            snapshot TEXT,
+            comment TEXT,
             FOREIGN KEY (symbol) REFERENCES symbols(name)
         )
     """)
 
-    # Таблица частичных выходов из сделок
+    # Таблица выходов по частям
     c.execute("""
         CREATE TABLE IF NOT EXISTS trade_exits (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -694,8 +695,12 @@ def init_db():
             price REAL,
             size REAL,
             pnl REAL,
-            reason TEXT,
+            reason TEXT CHECK (reason IN (
+                'tp-hit', 'sl-hit', 'manual', 'signal', 'expired', 'error'
+            )),
             signal_type TEXT,
+            snapshot TEXT,
+            comment TEXT,
             FOREIGN KEY (trade_id) REFERENCES trades(id)
         )
     """)
