@@ -153,7 +153,7 @@
         Object.entries(row).forEach(([key, val]) => {
           const td = document.createElement("td");
           if (key.toLowerCase().includes("time") || key.toLowerCase().includes("timestamp")) {
-          const localTime = new Date(val).toLocaleString("ru-RU", { timeZone: "Europe/Kyiv" });
+          const localTime = new Date(val + "Z").toLocaleString("ru-RU", { timeZone: "Europe/Kyiv" });
           td.innerText = localTime;
         } else {
           td.innerText = val ?? '';
