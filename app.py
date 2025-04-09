@@ -325,6 +325,8 @@ def fetch_kline_stream():
 def debug_channel(symbol):
     from collections import defaultdict
     from math import sqrt, atan, degrees
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
 
     interval = request.args.get("interval", "5m")
     if interval != "5m":
@@ -343,6 +345,7 @@ def debug_channel(symbol):
     except Exception as e:
         return f"<h3>Ошибка БД: {e}</h3>"
 
+    # 📊 Группировка данных по 5-минутным интервалам
     grouped = defaultdict(list)
     for ts_str, o, h, l, c_ in rows:
         try:
@@ -380,31 +383,35 @@ def debug_channel(symbol):
     avgX = sum(x) / length
     mid = sum(closes) / length
 
-    # slope
-    avgY = mid
-    covXY = sum((x[i] - avgX) * (closes[i] - avgY) for i in range(length))
+    # 📐 Slope по реальным значениям (для построения канала)
+    covXY = sum((x[i] - avgX) * (closes[i] - mid) for i in range(length))
     varX = sum((x[i] - avgX) ** 2 for i in range(length))
     slope = covXY / varX
-
-    # intercept через mid и avgX
     intercept = mid - slope * avgX
 
-    # stdDev
+    # 📊 StdDev и границы канала
     dev = 0.0
     for i in range(length):
         expected = slope * i + intercept
         dev += (closes[i] - expected) ** 2
     stdDev = sqrt(dev / length)
 
-    # канал
     y_start = intercept
     y_end = intercept + slope * (length - 1)
     center = (y_start + y_end) / 2
     upper = center + deviation * stdDev
     lower = center - deviation * stdDev
     width_percent = round((upper - lower) / center * 100, 2)
-    angle_deg = round(degrees(atan(slope)), 2)
 
+    # 🔁 Угол на нормализованных данных
+    base = closes[0] if closes[0] != 0 else 1
+    norm_closes = [c / base for c in closes]
+    norm_mid = sum(norm_closes) / length
+    norm_covXY = sum((x[i] - avgX) * (norm_closes[i] - norm_mid) for i in range(length))
+    norm_slope = norm_covXY / varX
+    angle_deg = round(degrees(atan(norm_slope)), 2)
+
+    # 📋 Подготовка таблицы
     rows_html = ""
     recent_candles = candles[-(length - 1):]
     for i in range(length - 1):
@@ -414,6 +421,7 @@ def debug_channel(symbol):
         l = recent_candles[i][1]["low"]
         c_ = recent_candles[i][1]["close"]
         rows_html += f"<tr><td>{ts}</td><td>{o}</td><td>{h}</td><td>{l}</td><td>{c_}</td><td>—</td></tr>"
+
     rows_html += f"<tr><td><i>Current (latest_price)</i></td><td colspan='4'>Цена: {current_price}</td><td>—</td></tr>"
 
     min_close = min(closes)
@@ -421,6 +429,7 @@ def debug_channel(symbol):
     min_low = min(lows)
     max_high = max(highs)
 
+    # 📤 HTML-вывод
     return f"""
     <html>
     <head>
@@ -441,7 +450,7 @@ def debug_channel(symbol):
             stdDev = {round(stdDev, 8)}<br>
             КАНАЛ: <b>{round(lower,5)} / {round(center,5)} / {round(upper,5)}</b><br>
             <b>Ширина канала:</b> {width_percent}%<br>
-            <b>Угол наклона:</b> {angle_deg}&deg;<br><br>
+            <b>Угол наклона (нормализ.):</b> {angle_deg}&deg;<br><br>
             <b>min(close):</b> {round(min_close,5)}<br>
             <b>max(close):</b> {round(max_close,5)}<br>
             <b>min(low):</b> {round(min_low,5)}<br>
