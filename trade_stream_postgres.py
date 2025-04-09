@@ -1,5 +1,5 @@
 
-# === МОДУЛЬ 1: Импорты и переменные подключения ===
+# === МОДУЛЬ IMPORT ===
 import os
 import time
 import json
@@ -14,7 +14,7 @@ PG_NAME = os.environ.get("PG_NAME")
 PG_USER = os.environ.get("PG_USER")
 PG_PASSWORD = os.environ.get("PG_PASSWORD")
 
-# === МОДУЛЬ 2: Загрузка списка символов из таблицы symbols ===
+# === МОДУЛЬ 1: Загрузка списка символов из таблицы symbols ===
 def load_symbols():
     try:
         print("🔎 Загружаем символы...")
@@ -35,7 +35,7 @@ def load_symbols():
         print("❌ Ошибка при загрузке symbols:", e)
         return []
 
-# === МОДУЛЬ 3: Поток @trade — запись в словарь latest_price ===
+# === МОДУЛЬ 2: Поток @trade — запись в словарь latest_price ===
 latest_price = {}
 
 def run_trade_stream():
@@ -69,7 +69,7 @@ def run_trade_stream():
 
     threading.Thread(target=run, daemon=True).start()
 
-# === МОДУЛЬ 4: Поток @kline_1m — запись в таблицу prices_pg ===
+# === МОДУЛЬ 3: Поток @kline_1m — запись в таблицу prices_pg ===
 def run_kline_stream():
     def on_message(ws, message):
         try:
@@ -122,7 +122,70 @@ def run_kline_stream():
 
     threading.Thread(target=run, daemon=True).start()
 
-# === МОДУЛЬ 5: Точка входа для запуска обоих потоков ===
+
+# === МОДУЛЬ 4: Формирование и сохранение 5-минутных свечей (candles_5m) ===
+
+from datetime import datetime, timedelta
+
+# Временный буфер по 5 свечей на каждый символ
+buffers_5m = {}
+
+# Агрегация и сохранение одной 5m-свечи
+def aggregate_and_save_5m(symbol, buffer, conn_params):
+    try:
+        if len(buffer) < 5:
+            return  # Недостаточно данных
+
+        opens = [row['open'] for row in buffer]
+        highs = [row['high'] for row in buffer]
+        lows = [row['low'] for row in buffer]
+        closes = [row['close'] for row in buffer]
+        timestamp = buffer[0]['timestamp']  # время первой свечи (начало интервала)
+
+        o = opens[0]
+        h = max(highs)
+        l = min(lows)
+        c = closes[-1]
+
+        conn = psycopg2.connect(**conn_params)
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO candles_5m (symbol, timestamp, open, high, low, close) VALUES (%s, %s, %s, %s, %s, %s)",
+            (symbol, timestamp, o, h, l, c)
+        )
+        conn.commit()
+        conn.close()
+        print(f"🕔 [candles_5m] {symbol} | {timestamp} | {o}-{h}-{l}-{c}", flush=True)
+    except Exception as e:
+        print(f"❌ Ошибка при сохранении свечи 5m: {e}", flush=True)
+
+# Добавление новой M1-свечи в буфер и проверка на завершение пятиминутки
+def process_kline_for_5m(symbol, kline, conn_params):
+    ts = datetime.fromtimestamp(kline['timestamp'] / 1000).replace(second=0, microsecond=0)
+    ts_5m = ts.replace(minute=(ts.minute // 5) * 5)
+
+    candle = {
+        'timestamp': ts_5m,
+        'open': float(kline['open']),
+        'high': float(kline['high']),
+        'low': float(kline['low']),
+        'close': float(kline['close'])
+    }
+
+    if symbol not in buffers_5m:
+        buffers_5m[symbol] = []
+
+    buf = buffers_5m[symbol]
+
+    # Если новая свеча в пределах текущего интервала — добавляем
+    if not buf or buf[-1]['timestamp'] == candle['timestamp']:
+        buf.append(candle)
+    else:
+        # Интервал сменился → агрегируем старые, сохраняем, сбрасываем
+        aggregate_and_save_5m(symbol, buf, conn_params)
+        buffers_5m[symbol] = [candle]
+
+# === МОДУЛЬ ENTRYPOINT ===
 if __name__ == "__main__":
     print("🚀 Background Worker: TRADE + KLINE PostgreSQL")
     run_trade_stream()
