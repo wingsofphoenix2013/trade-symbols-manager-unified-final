@@ -221,6 +221,6 @@ def process_kline_for_5m(symbol, kline, conn_params):
 if __name__ == "__main__":
     print("🚀 Background Worker: TRADE + KLINE PostgreSQL")
     run_trade_stream()
-    run_kline_stream()
+    fetch_kline_stream()
     while True:
         time.sleep(60)
