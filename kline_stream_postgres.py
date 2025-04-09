@@ -16,6 +16,7 @@ PG_PASSWORD = os.environ.get("PG_PASSWORD")
 # === Получение списка символов из PostgreSQL ===
 def load_symbols():
     try:
+        print("🔎 Загружаем список символов из PostgreSQL...")
         conn = psycopg2.connect(
             dbname=PG_NAME,
             user=PG_USER,
@@ -27,6 +28,7 @@ def load_symbols():
         cur.execute("SELECT name FROM symbols")
         symbols = [row[0].lower() for row in cur.fetchall()]
         conn.close()
+        print(f"✅ Загружено {len(symbols)} символов: {symbols}")
         return symbols
     except Exception as e:
         print("❌ Ошибка PostgreSQL при загрузке symbols:", e)
@@ -40,11 +42,11 @@ def run_kline_stream():
         try:
             data = json.loads(message)
             kline = data['data']['k']
-            if not kline['x']:  # только закрытые свечи
+            if not kline['x']:
                 return
 
             symbol = data['data']['s'].lower()
-            ts = kline['t']  # время открытия свечи (в мс)
+            ts = kline['t']
             o = float(kline['o'])
             h = float(kline['h'])
             l = float(kline['l'])
@@ -69,7 +71,7 @@ def run_kline_stream():
 
             print(f"✅ {symbol} [{ts_iso}] {o} / {h} / {l} / {c_}")
         except Exception as e:
-            print("❌ Ошибка при обработке свечи:", e)
+            print("❌ Ошибка в on_message:", e)
 
     def stream_loop():
         while True:
@@ -77,20 +79,21 @@ def run_kline_stream():
                 symbols = load_symbols()
                 if not symbols:
                     print("⚠️ Нет символов для подписки. Ждём...")
-                    time.sleep(5)
+                    time.sleep(10)
                     continue
                 streams = [f"{s}@kline_1m" for s in symbols]
                 url = "wss://fstream.binance.com/stream?streams=" + "/".join(streams)
-                print("🔌 URL WebSocket подписки:", url)
+                print("🔌 Подключение к WebSocket:", url)
                 ws = websocket.WebSocketApp(url, on_message=on_message)
                 ws.run_forever()
             except Exception as e:
                 print("❌ Ошибка WebSocket:", e)
-                time.sleep(5)
+                time.sleep(10)
 
     threading.Thread(target=stream_loop, daemon=True).start()
 
 if __name__ == "__main__":
     run_kline_stream()
     while True:
+        print("⏳ Worker жив... Ждём новые свечи...")
         time.sleep(60)
