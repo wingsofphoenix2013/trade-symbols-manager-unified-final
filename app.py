@@ -805,6 +805,71 @@ def api_db_table(table):
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+# === МОДУЛЬ 13: Расчёт ATR по свечам candles_5m ===
+
+from flask import request
+import psycopg2
+
+@app.route("/api/atr/<symbol>")
+def api_atr(symbol):
+    try:
+        # Чтение параметров запроса
+        interval = request.args.get("interval", "5m")
+        period = int(request.args.get("period", 14))
+
+        if interval != "5m":
+            return jsonify({"error": "Поддерживается только interval=5m"}), 400
+
+        # Подключение к PostgreSQL
+        conn = psycopg2.connect(
+            dbname=os.environ.get("PG_NAME"),
+            user=os.environ.get("PG_USER"),
+            password=os.environ.get("PG_PASSWORD"),
+            host=os.environ.get("PG_HOST"),
+            port=os.environ.get("PG_PORT", 5432)
+        )
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT timestamp, high, low, close
+            FROM candles_5m
+            WHERE symbol = %s
+            ORDER BY timestamp DESC
+            LIMIT %s
+        """, (symbol.upper(), period + 1))
+        rows = cur.fetchall()
+        conn.close()
+
+        if len(rows) <= period:
+            return jsonify({"error": "Недостаточно данных для расчёта"}), 400
+
+        # Обратный порядок: от старых к новым
+        rows.reverse()
+
+        # Расчёт True Range (TR)
+        tr_list = []
+        for i in range(1, len(rows)):
+            high = float(rows[i][1])
+            low = float(rows[i][2])
+            prev_close = float(rows[i-1][3])
+            tr = max(
+                high - low,
+                abs(high - prev_close),
+                abs(low - prev_close)
+            )
+            tr_list.append(tr)
+
+        # Расчёт ATR как SMA (по умолчанию)
+        atr = sum(tr_list[-period:]) / period
+
+        return jsonify({
+            "symbol": symbol.upper(),
+            "interval": interval,
+            "period": period,
+            "atr": round(atr, 6)
+        })
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 # Запуск сервера + инициализация
 if __name__ == "__main__":
     init_db()
