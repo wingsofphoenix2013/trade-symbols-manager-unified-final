@@ -525,7 +525,7 @@ def latest_prices():
 def api_live_channel(symbol):
     from collections import defaultdict
     from math import sqrt, atan, degrees
-    from datetime import datetime
+    from datetime import datetime, timedelta
 
     symbol = symbol.lower()
     interval_minutes = 5
@@ -548,6 +548,7 @@ def api_live_channel(symbol):
     except Exception as e:
         return jsonify({"error": f"Ошибка БД: {str(e)}"})
 
+    # 📊 Группировка в 5-минутные свечи
     grouped = defaultdict(list)
     for ts_str, o, h, l, c_ in rows:
         try:
@@ -558,6 +559,7 @@ def api_live_channel(symbol):
         key = ts.replace(minute=minute, second=0, microsecond=0)
         grouped[key].append((float(o), float(h), float(l), float(c_)))
 
+    # 📈 Построение списка свечей
     candles = []
     for ts in sorted(grouped.keys()):
         bucket = grouped[ts]
@@ -571,15 +573,14 @@ def api_live_channel(symbol):
     if len(candles) < length - 1:
         return jsonify({"error": "Недостаточно данных"})
 
-    closes = [c[1]["close"] for c in candles[-(length - 1):]]
+    # 📉 Текущая цена
     current_price = latest_price.get(symbol)
     if not current_price:
         return jsonify({"error": "Нет текущей цены"})
-    closes.append(current_price)
 
-    lows = [c[1]["low"] for c in candles[-(length - 1):]]
-    highs = [c[1]["high"] for c in candles[-(length - 1):]]
-    open_price = candles[-1][1]["open"]
+    # 📊 Реальные цены (для построения канала)
+    closes = [c[1]["close"] for c in candles[-(length - 1):]]
+    closes.append(current_price)
 
     x = list(range(length))
     avgX = sum(x) / length
@@ -589,6 +590,7 @@ def api_live_channel(symbol):
     slope = covXY / varX
     intercept = mid - slope * avgX
 
+    # 📏 Ширина и отклонения
     dev = 0.0
     for i in range(length):
         expected = slope * i + intercept
@@ -601,8 +603,17 @@ def api_live_channel(symbol):
     upper = center + deviation * stdDev
     lower = center - deviation * stdDev
     width_percent = round((upper - lower) / center * 100, 2)
-    angle_deg = round(degrees(atan(slope)), 2)
 
+    # 🧠 Вставка нормализованных данных ТОЛЬКО для расчёта угла
+    base_price = closes[0] if closes[0] != 0 else 1
+    norm_closes = [c / base_price for c in closes]
+    norm_mid = sum(norm_closes) / length
+    norm_covXY = sum((x[i] - avgX) * (norm_closes[i] - norm_mid) for i in range(length))
+    norm_varX = sum((x[i] - avgX) ** 2 for i in range(length))
+    norm_slope = norm_covXY / norm_varX
+    angle_deg = round(degrees(atan(norm_slope)), 2)
+
+    # 🧭 Направление канала
     if angle_deg > 2:
         direction = "восходящий ↗️"
         color = "green"
@@ -613,18 +624,20 @@ def api_live_channel(symbol):
         direction = "флет ➡️"
         color = "black"
 
+    # 📍 Актуальный сигнал
     signal = ""
     for st, act in signal_rows:
         if current_start <= st < current_start + timedelta(minutes=interval_minutes):
             signal = act
             break
 
+    # 🕓 Локальное время
     local_time = now.replace(tzinfo=timezone.utc).astimezone(ZoneInfo("Europe/Kyiv"))
 
     return jsonify({
         "time": now.strftime("%Y-%m-%d %H:%M:%S"),
         "local_time": local_time.strftime("%Y-%m-%d %H:%M:%S"),
-        "open_price": round(open_price, 5),
+        "open_price": round(candles[-1][1]["open"], 5),
         "current_price": round(current_price, 5),
         "direction": direction,
         "direction_color": color,
@@ -632,7 +645,6 @@ def api_live_channel(symbol):
         "width_percent": width_percent,
         "signal": signal
     })
-
 # === МОДУЛЬ 11: Инициализация структуры БД (таблицы) ===
 
 def init_db():
