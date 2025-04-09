@@ -68,60 +68,92 @@ def run_trade_stream():
                 time.sleep(10)
 
     threading.Thread(target=run, daemon=True).start()
+# === МОДУЛЬ 3: Поток @kline_1m — запись в таблицу prices_pg + агрегация M5 ===
 
-# === МОДУЛЬ 3: Поток @kline_1m — запись в таблицу prices_pg ===
-def run_kline_stream():
+def fetch_kline_stream():
+    print("🚀 Запуск потока @kline_1m...", flush=True)
+
+    # Формируем словарь подключения к PostgreSQL один раз
+    conn_params = {
+        "dbname": PG_NAME,
+        "user": PG_USER,
+        "password": PG_PASSWORD,
+        "host": PG_HOST,
+        "port": PG_PORT
+    }
+
     def on_message(ws, message):
         try:
             data = json.loads(message)
-            kline = data['data']['k']
-            if not kline['x']:
-                return
-            symbol = data['data']['s'].lower()
-            ts = kline['t']
-            o = float(kline['o'])
-            h = float(kline['h'])
-            l = float(kline['l'])
-            c_ = float(kline['c'])
-            ts_iso = time.strftime('%Y-%m-%dT%H:%M:%S', time.gmtime(ts / 1000))
+            stream = data.get("stream")
+            payload = data.get("data")
 
-            conn = psycopg2.connect(
-                dbname=PG_NAME,
-                user=PG_USER,
-                password=PG_PASSWORD,
-                host=PG_HOST,
-                port=PG_PORT
-            )
+            if not stream or not payload:
+                return
+
+            symbol = stream.split("@")[0].upper()
+            kline = payload.get("k")
+            if not kline or not kline.get("x"):
+                return  # Только закрытые свечи
+
+            kline_data = {
+                "timestamp": int(kline["T"]),
+                "open": kline["o"],
+                "high": kline["h"],
+                "low": kline["l"],
+                "close": kline["c"]
+            }
+
+            # Сохраняем M1-свечу в базу
+            conn = psycopg2.connect(**conn_params)
             cur = conn.cursor()
-            cur.execute(
-                "INSERT INTO prices_pg (symbol, timestamp, open, high, low, close) VALUES (%s, %s, %s, %s, %s, %s)",
-                (symbol, ts_iso, o, h, l, c_)
-            )
+            cur.execute("""
+                INSERT INTO prices_pg (symbol, timestamp, open, high, low, close)
+                VALUES (%s, to_timestamp(%s / 1000), %s, %s, %s, %s)
+            """, (
+                symbol,
+                kline_data["timestamp"],
+                kline_data["open"],
+                kline_data["high"],
+                kline_data["low"],
+                kline_data["close"]
+            ))
             conn.commit()
             conn.close()
-            print(f"📦 KLINE: {symbol} {ts_iso} → {o}/{h}/{l}/{c_}")
+
+            print(f"📉 [{symbol}] M1: {kline_data['timestamp']} | {kline_data['close']}", flush=True)
+
+            # ➕ Вызываем агрегацию 5m-свечей
+            process_kline_for_5m(symbol, kline_data, conn_params)
+
         except Exception as e:
-            print("❌ Ошибка обработки KLINE:", e)
+            print("❌ Ошибка потока @kline_1m:", e, flush=True)
 
-    def run():
-        while True:
-            try:
-                symbols = load_symbols()
-                if not symbols:
-                    print("⚠️ Нет символов для подписки на @kline_1m")
-                    time.sleep(10)
-                    continue
-                streams = [f"{s}@kline_1m" for s in symbols]
-                url = "wss://fstream.binance.com/stream?streams=" + "/".join(streams)
-                print("🔁 Подписка на KLINE:", url)
-                ws = websocket.WebSocketApp(url, on_message=on_message)
-                ws.run_forever()
-            except Exception as e:
-                print("❌ Ошибка WebSocket KLINE:", e)
-                time.sleep(10)
+    def on_error(ws, error):
+        print("❌ WebSocket ошибка:", error, flush=True)
 
-    threading.Thread(target=run, daemon=True).start()
+    def on_close(ws, close_status_code, close_msg):
+        print("🔌 WebSocket закрыт", flush=True)
 
+    def on_open(ws):
+        print("🟢 Подключено к Binance WebSocket", flush=True)
+        params = [f"{symbol}@kline_1m" for symbol in load_symbols()]
+        payload = {
+            "method": "SUBSCRIBE",
+            "params": params,
+            "id": 1
+        }
+        ws.send(json.dumps(payload))
+
+    ws = websocket.WebSocketApp(
+        "wss://fstream.binance.com/stream",
+        on_open=on_open,
+        on_message=on_message,
+        on_error=on_error,
+        on_close=on_close
+    )
+
+    threading.Thread(target=ws.run_forever).start()
 
 # === МОДУЛЬ 4: Формирование и сохранение 5-минутных свечей (candles_5m) ===
 
