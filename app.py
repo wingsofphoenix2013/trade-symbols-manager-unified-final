@@ -870,6 +870,62 @@ def api_atr(symbol):
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+# === МОДУЛЬ 14: API управления торговлей по символу ===
+
+from flask import request
+
+# Получение текущего статуса торговли для символа
+@app.route("/api/symbols/<symbol>")
+def get_trade_permission(symbol):
+    try:
+        conn = psycopg2.connect(
+            dbname=os.environ.get("PG_NAME"),
+            user=os.environ.get("PG_USER"),
+            password=os.environ.get("PG_PASSWORD"),
+            host=os.environ.get("PG_HOST"),
+            port=os.environ.get("PG_PORT", 5432)
+        )
+        cur = conn.cursor()
+        cur.execute("SELECT tradepermission FROM symbols WHERE name = %s", (symbol.upper(),))
+        row = cur.fetchone()
+        conn.close()
+
+        if row:
+            return jsonify({"symbol": symbol.upper(), "tradepermission": row[0]})
+        else:
+            return jsonify({"error": "Symbol not found"}), 404
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+# Переключение статуса торговли (enabled ⇄ disabled)
+@app.route("/api/symbols/<symbol>/toggle-trade", methods=["POST"])
+def toggle_trade_permission(symbol):
+    try:
+        conn = psycopg2.connect(
+            dbname=os.environ.get("PG_NAME"),
+            user=os.environ.get("PG_USER"),
+            password=os.environ.get("PG_PASSWORD"),
+            host=os.environ.get("PG_HOST"),
+            port=os.environ.get("PG_PORT", 5432)
+        )
+        cur = conn.cursor()
+        cur.execute("SELECT tradepermission FROM symbols WHERE name = %s", (symbol.upper(),))
+        row = cur.fetchone()
+
+        if not row:
+            conn.close()
+            return jsonify({"error": "Symbol not found"}), 404
+
+        current = row[0]
+        new_status = "disabled" if current == "enabled" else "enabled"
+
+        cur.execute("UPDATE symbols SET tradepermission = %s WHERE name = %s", (new_status, symbol.upper()))
+        conn.commit()
+        conn.close()
+
+        return jsonify({"symbol": symbol.upper(), "new_status": new_status})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 # Запуск сервера + инициализация
 if __name__ == "__main__":
     init_db()
