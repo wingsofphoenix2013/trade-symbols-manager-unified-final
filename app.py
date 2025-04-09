@@ -623,10 +623,10 @@ def api_live_channel(symbol):
     angle_deg = round(degrees(atan(norm_slope)), 2)
 
     # 🧭 Направление канала
-    if angle_deg > 2:
+    if angle_deg > 0.025:
         direction = "восходящий ↗️"
         color = "green"
-    elif angle_deg < -2:
+    elif angle_deg < -0.025:
         direction = "нисходящий ↘️"
         color = "red"
     else:
