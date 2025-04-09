@@ -100,42 +100,65 @@ def clear_prices(symbol):
     return jsonify({"success": True})
 # === МОДУЛЬ 4: Приём сигналов через webhook ===
 
+from flask import request, jsonify
+import psycopg2
+from datetime import datetime
+
+# Маршрут обработки POST-запроса от TradingView и других источников
 @app.route("/webhook", methods=["POST"])
 def webhook():
     try:
+        # 1. Извлечение текста из POST-запроса
         if request.is_json:
             data = request.get_json()
             message = data.get("message", "")
         else:
             message = request.data.decode("utf-8")
 
-        print("🚨 WEBHOOK СООБЩЕНИЕ:", message)
-        sys.stdout.flush()
-
+        print("📩 Получено webhook-сообщение:", message)
+        
+        # 2. Парсинг строки: ожидается формат "ACTION SYMBOL"
         parts = message.strip().split()
-        if not parts or len(parts) < 2:
+        if len(parts) < 2:
             return jsonify({"status": "invalid format"}), 400
 
         action = parts[0].upper()
         raw_symbol = parts[1].upper()
-        symbol = raw_symbol.replace(".P", "")  # удаляем .P
+        symbol = raw_symbol.replace(".P", "")  # Удаляем возможный суффикс .P
 
-        if action not in ["BUY", "SELL", "BUYZONE", "SELLZONE", "BUYORDER", "SELLORDER"]:
-            return jsonify({"status": "unknown action"}), 400
+        # 3. Определение типа сигнала
+        if action in ["BUY", "SELL", "BUYORDER", "SELLORDER"]:
+            signal_type = "action"
+        elif action in ["BUYZONE", "SELLZONE"]:
+            signal_type = "control"
+        else:
+            signal_type = "info"
 
-        timestamp = datetime.utcnow().replace(second=0, microsecond=0).isoformat()
-        conn = sqlite3.connect(DB_PATH)
-        c = conn.cursor()
-        c.execute("INSERT INTO signals (symbol, action, timestamp) VALUES (?, ?, ?)", (symbol, action, timestamp))
+        # 4. Фиксация текущего времени (UTC) — обрезка до минут
+        timestamp = datetime.utcnow().replace(second=0, microsecond=0)
+
+        # 5. Запись сигнала в PostgreSQL
+        conn = psycopg2.connect(
+            dbname=os.environ.get("PG_NAME"),
+            user=os.environ.get("PG_USER"),
+            password=os.environ.get("PG_PASSWORD"),
+            host=os.environ.get("PG_HOST"),
+            port=os.environ.get("PG_PORT", 5432)
+        )
+        cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO signals (symbol, action, type, timestamp)
+            VALUES (%s, %s, %s, %s)
+        """, (symbol, action, signal_type, timestamp))
         conn.commit()
         conn.close()
 
+        print(f"✅ Сигнал записан: {symbol} | {action} | {signal_type} | {timestamp}")
         return jsonify({"status": "success"}), 200
 
     except Exception as e:
-        print("Webhook error:", e)
-        sys.stdout.flush()
-    return jsonify({"status": "ignored"}), 400
+        print("❌ Ошибка при обработке webhook:", e)
+        return jsonify({"status": "error", "message": str(e)}), 500
 # === МОДУЛЬ 5: API свечей + сигнал + расчёт канала на каждую свечу ===
 
 @app.route("/api/candles/<symbol>")
