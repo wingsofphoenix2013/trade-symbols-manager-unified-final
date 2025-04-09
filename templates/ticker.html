@@ -85,8 +85,11 @@
 </head>
 <body>
 <div class="main-block">
+
+  <!-- 🔹 Основной контейнер: верхние 3 виджета -->
   <a href="/" class="btn">← Назад</a>
 
+    <!-- 🔹 Виджеты: Пара, Сделки, PnL -->
   <div class="widget-row">
     <div class="widget">
       <div class="widget-title">Пара</div>
@@ -102,6 +105,7 @@
     </div>
   </div>
 
+  <!-- 🔹 Виджет: Торговые инструменты -->
   <div class="tools-box">
     <h3 style="margin-left: 10px;">Торговые инструменты</h3>
     <table>
@@ -126,6 +130,42 @@
   </div>
 
 
+  
+  <!-- 🔹 Виджет: Открытые сделки -->
+  <div class="tools-box" style="margin-top: 30px;">
+    <h3 style="margin-left: 10px;">Открытые сделки</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>Открытие</th>
+          <th>Тип</th>
+          <th>Размер</th>
+          <th>Курс входа</th>
+          <th>Состояние</th>
+          <th>Реализованный PnL</th>
+          <th>Остаточный PnL</th>
+          <th>Действия</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>08.04.2025 22:15</td>
+          <td style="background: #ffe5e5;">🔻 Шорт (10x)</td>
+          <td>$1000</td>
+          <td>1.2340 USDT</td>
+          <td>TP1</td>
+          <td class="green">+10.00 USDT</td>
+          <td class="red">−3.50 USDT</td>
+          <td><button class="trade-btn" style="background: #007bff;">Закрыть сделку</button></td>
+        </tr>
+      </tbody>
+    </table>
+    
+
+  </div>
+
+
+<!-- 🔹 Виджет: Исторические сделки -->
   <div class="tools-box" style="margin-top: 30px;">
     <h3 style="margin-left: 10px;">Сделки</h3>
     <table>
@@ -141,19 +181,19 @@
         </tr>
       </thead>
       <tbody>
-        <tr style="background: #ffe5e5;">
+        <tr>
           <td>08.04.2025 12:40</td>
           <td>08.04.2025 19:40</td>
-          <td>🔻 Шорт (10x)</td>
+          <td style="background: #ffe5e5;">🔻 Шорт (10x)</td>
           <td>$1000</td>
           <td>1.2345 USDT</td>
           <td class="green">+15.60 USDT</td>
           <td><a href="/order-info" class="btn">Инфо</a></td>
         </tr>
-        <tr style="background: #e5ffe5;">
+        <tr>
           <td>07.04.2025 11:40</td>
           <td>07.04.2025 15:20</td>
-          <td>🔺 Лонг (10x)</td>
+          <td style="background: #e5ffe5;">🔺 Лонг (10x)</td>
           <td>$1000</td>
           <td>1.2300 USDT</td>
           <td class="red">−7.20 USDT</td>
@@ -161,10 +201,23 @@
         </tr>
       </tbody>
     </table>
+    <!-- 🔹 Постраничная навигация -->
+    <div style="margin-top: 15px; text-align: center;">
+      <button class="trade-btn" style="background: #007bff; font-weight: bold;">1</button>
+      <button class="trade-btn" style="background: #ddd; color: #333;">2</button>
+      <button class="trade-btn" style="background: #ddd; color: #333;">3</button>
+      <span style="margin: 0 5px;">...</span>
+      <button class="trade-btn" style="background: #ddd; color: #333;">10</button>
+    </div>
+
+    
+
   </div>
 </div>
 
 
+
+<!-- 🔹 JS: подстановка имени пары и обновление данных -->
 <script>
   const symbolName = window.location.pathname.split("/").pop();
   document.title = `Пара: ${symbolName.toUpperCase()}`;
