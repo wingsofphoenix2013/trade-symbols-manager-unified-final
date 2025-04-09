@@ -1,4 +1,4 @@
-√√√from flask import Flask, render_template, request, jsonify, redirect
+from flask import Flask, render_template, request, jsonify, redirect
 import sqlite3
 import os
 import json
