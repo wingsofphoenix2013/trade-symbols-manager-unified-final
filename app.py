@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, jsonify, redirect
+√√√from flask import Flask, render_template, request, jsonify, redirect
 import sqlite3
 import os
 import json
@@ -623,10 +623,10 @@ def api_live_channel(symbol):
     angle_deg = round(degrees(atan(norm_slope)), 2)
 
     # 🧭 Направление канала
-    if angle_deg > 0.025:
+    if angle_deg > 0.01:
         direction = "восходящий ↗️"
         color = "green"
-    elif angle_deg < -0.025:
+    elif angle_deg < -0.01:
         direction = "нисходящий ↘️"
         color = "red"
     else:
